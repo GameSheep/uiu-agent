@@ -174,7 +174,7 @@ def _run_tui(args, parser: argparse.ArgumentParser) -> int:
 
     client = make_client(cfg.model)
     ws = load_workspace(ws_path)
-    return repl(client, ws, model=cfg.model.default)
+    return repl(client, ws, model=cfg.model.default, cfg=cfg.model)
 
 
 def _dispatch(args, parser: argparse.ArgumentParser) -> int:

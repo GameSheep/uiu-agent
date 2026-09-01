@@ -10,8 +10,28 @@
 - 你的"人设"写在 `workspace/SOUL.md` 里——改它，agent 就变样。
 - 长记忆写在 `workspace/MEMORY.md`——对话里 `/memory <note>` 一键追加。
 - **自我学习（Hermes learning loop）**：主动记记忆、沉淀技能、改进技能。
+- **屏幕自动化（OCR，免视觉模型）**：说"点提交按钮"它就能点。
 - **完整 CLI**：配置模型（34 provider）、加 skill、加 channel（Telegram/飞书/企微/钉钉/Discord/Slack）、更新代码。
 - **可发布到 PyPI**：`uiu publish` 一行构建 + 上传，全世界 `pip install uiu`。
+
+## 屏幕自动化（OCR 点击，不需要视觉模型）
+
+```
+"帮我点击网页上的提交按钮"     → agent 调 click_text
+"屏幕上现在有什么？"           → agent 调 screen_read_text
+"输入用户名然后点登录"          → click_text + type_text + click_text
+```
+
+**技术链路**：PyAutoGUI 截图 → RapidOCR 识别中文文字 → 按文本找坐标 → PyAutoGUI 点击。
+不需要视觉模型，纯 OCR 定位——中文识别准确率 99%+。
+
+工具：
+| 工具 | 干嘛 |
+|---|---|
+| `click_text` | 点击屏幕上指定文字的按钮/元素 |
+| `screen_read_text` | 读取整个屏幕的可见文字 |
+| `type_text` | 在当前输入框输入文字 |
+| `press_key` | 按键/组合键（enter、ctrl+s） |
 
 ## 自我学习（Hermes 对齐）
 

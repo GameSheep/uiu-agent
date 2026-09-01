@@ -119,12 +119,14 @@ def tool_write_file(path: str, content: str) -> str:
 # ----- registry -----
 
 from .learning import LEARNING_TOOLS, learning_tool_defs, call_learning_tool
+from .screen_tools import SCREEN_TOOLS, screen_tool_defs, call_screen_tool
 
 BUILTIN_TOOLS: dict[str, dict] = {
     "shell_exec": {"def": TOOL_SHELL_DEF, "fn": tool_shell_exec},
     "read_file": {"def": TOOL_READ_DEF, "fn": tool_read_file},
     "write_file": {"def": TOOL_WRITE_DEF, "fn": tool_write_file},
     **LEARNING_TOOLS,
+    **SCREEN_TOOLS,
 }
 
 

@@ -11,6 +11,7 @@ dist/
 venv/
 
 # secrets — NEVER commit these
+.env
 workspace/.env
 *.env.local
 

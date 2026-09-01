@@ -586,93 +586,34 @@ def cmd_update(args) -> int:
     ws = _workspace(args)
     if args.what == "self":
         if getattr(args, "no_pull", False):
-            return _update_self_no_pull()
-        return _update_self()
+            # skip git pull, still verify + staged install
+            from .safe_update import staged_install, ensure_backup_point
+            import os
+            repo_root = Path(__file__).resolve().parent.parent.parent
+            src_dir = repo_root / "src" / "uiu"
+            tag = ensure_backup_point(repo_root)
+            if tag:
+                print(f"· 已创建回滚点: git tag {tag}")
+            print("· 在隔离环境验证安装（不碰当前运行环境）…")
+            ok, msg = staged_install(repo_root, src_dir)
+            if not ok:
+                _print_err(f"更新验证失败，已回滚（当前环境未动）:\n{msg}")
+                return 1
+            print(f"· 验证通过 ({msg})，应用更新…")
+            rc = subprocess.run(
+                [sys.executable, "-m", "pip", "install", "-e", str(repo_root), "--quiet"],
+                check=False,
+            )
+            if rc.returncode != 0:
+                _print_err("应用更新失败")
+                return 1
+            _print_ok("更新完成！重启 uiu 生效")
+            return 0
+        from .safe_update import safe_self_update
+        return safe_self_update()
     if args.what == "skills":
         return _update_default_skills(ws)
     return 2
-
-
-def _update_self_no_pull() -> int:
-    print("· pip: reinstalling (editable, no git pull)…")
-    rc = subprocess.run(
-        [sys.executable, "-m", "pip", "install", "-e", ".", "--quiet"],
-        check=False,
-    )
-    if rc.returncode != 0:
-        _print_err("pip install failed")
-        return 1
-    _print_ok("reinstalled — restart agent to pick up changes")
-    return 0
-
-
-def _update_self() -> int:
-    """Stable, idempotent update. Three layers:
-
-    1. git pull        — fetch latest code (if repo has a remote)
-    2. pip install -e  — reinstall so new deps/code are active
-    3. report status   — tell user what changed
-
-    Never touches workspace/ (SOUL/IDENTITY/USER are the user's own IP).
-    If git pull conflicts (local edits), it stops and tells the user,
-    rather than silently overwriting.
-    """
-    ok = True
-
-    # Layer 1: git
-    if _in_git_repo():
-        remotes = _git_remotes()
-        if remotes:
-            print("· git: pulling latest code…")
-            rc = _git(["pull", "--ff-only"])
-            if rc != 0:
-                _print_err("git pull failed (maybe local edits conflict with upstream?)")
-                print("  → fix conflicts, or skip remote updates with: uiu update self --no-pull")
-                ok = False
-        else:
-            print("· git: no remote configured — skipping pull (local repo only)")
-    else:
-        print("· git: not a git repository — skipping (run `git init` to enable)")
-
-    # Layer 2: pip reinstall
-    print("· pip: reinstalling (editable)…")
-    rc = subprocess.run(
-        [sys.executable, "-m", "pip", "install", "-e", ".", "--quiet"],
-        check=False,
-    )
-    if rc.returncode != 0:
-        _print_err("pip install failed")
-        ok = False
-
-    if ok:
-        _print_ok("update complete — restart your agent to pick up changes")
-        return 0
-    return 1
-
-
-# ---------- git helpers ----------
-
-def _in_git_repo() -> bool:
-    rc = subprocess.run(
-        ["git", "rev-parse", "--is-inside-work-tree"],
-        capture_output=True, text=True,
-    )
-    return rc.returncode == 0
-
-
-def _git_remotes() -> list[str]:
-    rc = subprocess.run(
-        ["git", "remote"],
-        capture_output=True, text=True,
-    )
-    if rc.returncode != 0:
-        return []
-    return [l.strip() for l in rc.stdout.splitlines() if l.strip()]
-
-
-def _git(args: list[str]) -> int:
-    rc = subprocess.run(["git", *args], check=False)
-    return rc.returncode
 
 
 def _update_default_skills(ws: Path) -> int:

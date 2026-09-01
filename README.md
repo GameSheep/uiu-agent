@@ -220,10 +220,17 @@ uiu serve --port 9000
 
 ### `update`
 ```
-uiu update self                                  # git pull（如有 remote）+ 重装，幂等
-uiu update self --no-pull                        # 只重装，不拉远程
+uiu update self                                  # 安全更新（隔离验证 + 锁 + 回滚点）
+uiu update self --no-pull                        # 不拉远程，只验证 + 应用
 uiu update skills                                # 同步默认 skills 到 workspace
 ```
+
+**安全更新机制（防自毁）：**
+1. **更新锁**：`.uiu-update-in-progress` 标记（pid + 时间戳），防止两个更新并发改坏代码树
+2. **回滚点**：更新前自动 `git tag uiu-backup-*`，出问题能立刻回去
+3. **隔离验证**：先在临时 staging venv 里装 + 语法检查 + 模块导入测试，**验证不过就不碰当前环境**
+4. **通过才应用**：验证通过后才真正安装
+5. **不热重载**：更新后提示重启生效——当前进程继续用旧代码，绝不在运行中加载半新代码
 
 **更新流程（推荐）：** 改完代码 → `git add -A && git commit -m "..."` → `uiu update self`。
 git 本身就是回滚手段（`git log` / `git revert`），update 永不碰你的 workspace 人设。

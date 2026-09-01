@@ -96,7 +96,8 @@ def _build_parser() -> argparse.ArgumentParser:
     # update
     pu = sub.add_parser("update", help="update code or sync bundled skills")
     pu_sub = pu.add_subparsers(dest="what", metavar="<what>", required=True)
-    pu_sub.add_parser("self", help="reinstall in editable mode")
+    pu_self = pu_sub.add_parser("self", help="git pull + reinstall")
+    pu_self.add_argument("--no-pull", action="store_true", help="skip git pull, only reinstall")
     pu_sub.add_parser("skills", help="sync bundled default skills into workspace")
 
     sub.add_parser("version", help="print version")

@@ -365,15 +365,16 @@ def _parse_options(items: list[str] | None) -> dict:
 def cmd_update(args) -> int:
     ws = _workspace(args)
     if args.what == "self":
+        if getattr(args, "no_pull", False):
+            return _update_self_no_pull()
         return _update_self()
     if args.what == "skills":
         return _update_default_skills(ws)
     return 2
 
 
-def _update_self() -> int:
-    """Reinstall in editable form (re-fetches any new code/files)."""
-    print("reinstalling my-agent in editable mode…")
+def _update_self_no_pull() -> int:
+    print("· pip: reinstalling (editable, no git pull)…")
     rc = subprocess.run(
         [sys.executable, "-m", "pip", "install", "-e", ".", "--quiet"],
         check=False,
@@ -381,8 +382,77 @@ def _update_self() -> int:
     if rc.returncode != 0:
         _print_err("pip install failed")
         return 1
-    _print_ok("self updated")
+    _print_ok("reinstalled — restart agent to pick up changes")
     return 0
+
+
+def _update_self() -> int:
+    """Stable, idempotent update. Three layers:
+
+    1. git pull        — fetch latest code (if repo has a remote)
+    2. pip install -e  — reinstall so new deps/code are active
+    3. report status   — tell user what changed
+
+    Never touches workspace/ (SOUL/IDENTITY/USER are the user's own IP).
+    If git pull conflicts (local edits), it stops and tells the user,
+    rather than silently overwriting.
+    """
+    ok = True
+
+    # Layer 1: git
+    if _in_git_repo():
+        remotes = _git_remotes()
+        if remotes:
+            print("· git: pulling latest code…")
+            rc = _git(["pull", "--ff-only"])
+            if rc != 0:
+                _print_err("git pull failed (maybe local edits conflict with upstream?)")
+                print("  → fix conflicts, or skip remote updates with: my-agent update self --no-pull")
+                ok = False
+        else:
+            print("· git: no remote configured — skipping pull (local repo only)")
+    else:
+        print("· git: not a git repository — skipping (run `git init` to enable)")
+
+    # Layer 2: pip reinstall
+    print("· pip: reinstalling (editable)…")
+    rc = subprocess.run(
+        [sys.executable, "-m", "pip", "install", "-e", ".", "--quiet"],
+        check=False,
+    )
+    if rc.returncode != 0:
+        _print_err("pip install failed")
+        ok = False
+
+    if ok:
+        _print_ok("update complete — restart your agent to pick up changes")
+        return 0
+    return 1
+
+
+# ---------- git helpers ----------
+
+def _in_git_repo() -> bool:
+    rc = subprocess.run(
+        ["git", "rev-parse", "--is-inside-work-tree"],
+        capture_output=True, text=True,
+    )
+    return rc.returncode == 0
+
+
+def _git_remotes() -> list[str]:
+    rc = subprocess.run(
+        ["git", "remote"],
+        capture_output=True, text=True,
+    )
+    if rc.returncode != 0:
+        return []
+    return [l.strip() for l in rc.stdout.splitlines() if l.strip()]
+
+
+def _git(args: list[str]) -> int:
+    rc = subprocess.run(["git", *args], check=False)
+    return rc.returncode
 
 
 def _update_default_skills(ws: Path) -> int:

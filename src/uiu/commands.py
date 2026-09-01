@@ -109,6 +109,7 @@ def cmd_model(args) -> int:
     cfg = load_config(ws)
     m = cfg.model
 
+    # non-interactive: any --set-* flag present
     changed = False
     if args.set_provider:
         m.provider = args.set_provider
@@ -128,19 +129,132 @@ def cmd_model(args) -> int:
     if args.set_max_tokens is not None:
         m.max_tokens = args.set_max_tokens
         changed = True
-
-    if not changed:
-        print(f"provider:    {m.provider}")
-        print(f"base_url:    {m.base_url}")
-        print(f"model:       {m.model}")
-        print(f"api_key_env: {m.api_key_env}")
-        print(f"temperature: {m.temperature}")
-        print(f"max_tokens:  {m.max_tokens}")
+    if args.set_api_key:
+        # write key into .env under the model's api_key_env
+        env_path = ws / ".env"
+        existing = parse_env_file(env_path)
+        existing[m.api_key_env] = args.set_api_key
+        write_env_file(env_path, existing)
+        _print_ok(f"wrote key to {env_path}")
         return 0
 
+    if changed:
+        save_config(ws, cfg)
+        _print_ok(f"model updated -> {m.provider}/{m.model}")
+        return 0
+
+    # --- interactive wizard ---
+    return _model_wizard(ws, cfg)
+
+
+def _model_wizard(ws: Path, cfg: AppConfig) -> int:
+    from .providers import PROVIDERS, find as find_provider
+
+    m = cfg.model
+    print(f"当前模型: [{m.provider}] {m.model}")
+    print(f"  base_url: {m.base_url}")
+    print(f"  api_key_env: {m.api_key_env} -> {'已设置' if m.resolved_api_key() else '未设置'}")
+    print()
+
+    # step 1: choose provider
+    print("选择 provider:")
+    for i, p in enumerate(PROVIDERS, 1):
+        marker = " *" if p.name.lower() == m.provider.lower() else ""
+        print(f"  {i}. {p.name}  ({p.note}){marker}")
+    print(f"  {len(PROVIDERS)+1}. 保持当前配置")
+    try:
+        choice = input(f"> 输入数字 [1-{len(PROVIDERS)+1}]: ").strip()
+    except EOFError:
+        return 0
+    if choice == str(len(PROVIDERS) + 1):
+        return 0
+    try:
+        idx = int(choice) - 1
+        preset = PROVIDERS[idx]
+    except (ValueError, IndexError):
+        _print_err("无效选择")
+        return 2
+
+    if preset.name == "自定义":
+        m.provider = "custom"
+        m.base_url = input("base_url (如 https://api.xxx.com/v1): ").strip() or m.base_url
+        m.api_key_env = input(f"API key 环境变量名 (默认 {m.api_key_env}): ").strip() or m.api_key_env
+        m.model = input("model 名 (如 gpt-4o-mini): ").strip() or m.model
+    else:
+        m.provider = preset.name
+        m.base_url = preset.base_url
+        m.api_key_env = preset.api_key_env
+        m.model = preset.default_model
+        if preset.models:
+            print(f"\n{preset.name} 可用模型:")
+            for i, model in enumerate(preset.models, 1):
+                marker = " *" if model == m.model else ""
+                print(f"  {i}. {model}{marker}")
+            print(f"  {len(preset.models)+1}. 自定义")
+            model_choice = input(f"> 输入数字 [1-{len(preset.models)+1}] (默认 {m.model}): ").strip()
+            if model_choice:
+                try:
+                    mi = int(model_choice) - 1
+                    if 0 <= mi < len(preset.models):
+                        m.model = preset.models[mi]
+                    elif model_choice == str(len(preset.models) + 1):
+                        m.model = input("model 名: ").strip()
+                except ValueError:
+                    m.model = model_choice  # 用户直接输入了模型名
+
     save_config(ws, cfg)
-    _print_ok(f"model updated -> {m.provider}/{m.model}")
+    _print_ok(f"已保存: {m.provider} / {m.model}")
+
+    # step 2: API key
+    current = m.resolved_api_key()
+    if not current:
+        key_input = input(f"\n输入 {m.api_key_env} (留空跳过): ").strip()
+        if key_input:
+            env_path = ws / ".env"
+            existing = parse_env_file(env_path)
+            existing[m.api_key_env] = key_input
+            write_env_file(env_path, existing)
+            _print_ok(f"已写入 {m.api_key_env}")
+    else:
+        print(f"\n{m.api_key_env} 已设置（{current[:6]}…），如需更换输入新 key:")
+        key_input = input(f"新 {m.api_key_env} (留空保留): ").strip()
+        if key_input:
+            env_path = ws / ".env"
+            existing = parse_env_file(env_path)
+            existing[m.api_key_env] = key_input
+            write_env_file(env_path, existing)
+            _print_ok(f"已更新 {m.api_key_env}")
+
+    # step 3: test connection
+    test_choice = input("\n测试连接？[Y/n]: ").strip().lower()
+    if test_choice in ("", "y", "yes"):
+        return _test_model_connection(ws, cfg)
     return 0
+
+
+def _test_model_connection(ws: Path, cfg: AppConfig) -> int:
+    """Quick connectivity test: send a trivial chat completion."""
+    m = cfg.model
+    key = m.resolved_api_key()
+    if not key:
+        _print_err(f"{m.api_key_env} 未设置，跳过测试")
+        return 0
+    print(f"· 测试 {m.provider} / {m.model} @ {m.base_url} …")
+    try:
+        from .llm import make_client
+        client = make_client()
+        resp = client.chat.completions.create(
+            model=m.model,
+            messages=[{"role": "user", "content": "ping"}],
+            max_tokens=5,
+        )
+        reply = resp.choices[0].message.content or ""
+        _print_ok(f"连接成功！模型回复: {reply[:60]}")
+        return 0
+    except Exception as e:
+        _print_err(f"连接失败: {type(e).__name__}: {e}")
+        print("  检查 base_url / key / 网络，然后重新运行: uiu model")
+        return 1
 
 
 # ---------- config (secrets + workspace) ----------

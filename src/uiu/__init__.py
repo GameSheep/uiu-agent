@@ -1,2 +1,2 @@
-"""My Agent — minimal personal-IP agent skeleton."""
-__version__ = "0.1.0"
+"""uiu — minimal personal-IP agent: SOUL-driven, skills-extensible, OpenAI-compatible."""
+__version__ = "0.1.1"

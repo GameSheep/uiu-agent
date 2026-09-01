@@ -49,13 +49,14 @@ def _build_parser() -> argparse.ArgumentParser:
     sub.add_parser("show", help="show current config (model, channels, secrets state)")
 
     # model
-    pm = sub.add_parser("model", help="view or update model config")
+    pm = sub.add_parser("model", help="view/switch model interactively (or with --set-*)")
     pm.add_argument("--set-provider")
     pm.add_argument("--set-base-url")
     pm.add_argument("--set-model")
     pm.add_argument("--set-api-key-env")
     pm.add_argument("--set-temperature", type=float)
     pm.add_argument("--set-max-tokens", type=int)
+    pm.add_argument("--set-api-key", help="write API key to .env under current api_key_env")
 
     # config (secrets)
     pc = sub.add_parser("config", help="manage secrets (API keys, tokens)")
@@ -116,13 +117,17 @@ def _run_tui(args, parser: argparse.ArgumentParser) -> int:
     from .tui import repl
     from .workspace import load_workspace
 
-    # ensure workspace exists
-    from .commands import _workspace as _ws
+    from .commands import _workspace as _ws, cmd_init, cmd_model
+
     ws_path = _ws(args)
-    if not ws_path.exists():
-        print(f"workspace not found: {ws_path}", file=sys.stderr)
-        print("run: uiu init", file=sys.stderr)
-        return 2
+
+    # First-run UX: workspace missing -> auto init + run model wizard
+    if not (ws_path / "SOUL.md").exists():
+        print(f"[first-run] workspace 不存在，正在初始化: {ws_path}")
+        # reuse cmd_init with a namespace that has no extra attrs
+        import argparse as _argparse
+        init_ns = _argparse.Namespace(workspace=str(ws_path) if args.workspace else None)
+        cmd_init(init_ns)
 
     cfg = load_config(ws_path)
     # sync cfg -> env (so make_client picks up overrides)
@@ -131,9 +136,28 @@ def _run_tui(args, parser: argparse.ArgumentParser) -> int:
     if cfg.model.resolved_api_key():
         os.environ.setdefault("OPENAI_API_KEY", cfg.model.resolved_api_key())
 
+    # First-run UX: no API key -> auto run model wizard
+    if not os.environ.get("OPENAI_API_KEY") and not cfg.model.resolved_api_key():
+        print("\n[first-run] 还没有配置模型，先配一个（也可以随时用 `uiu model` 切换）")
+        import argparse as _argparse
+        model_ns = _argparse.Namespace(
+            workspace=str(ws_path) if args.workspace else None,
+            set_provider=None, set_base_url=None, set_model=None,
+            set_api_key_env=None, set_temperature=None, set_max_tokens=None,
+            set_api_key=None,
+        )
+        rc = cmd_model(model_ns)
+        if rc != 0:
+            return rc
+        # re-read config after wizard
+        cfg = load_config(ws_path)
+        os.environ.setdefault("OPENAI_BASE_URL", cfg.model.base_url)
+        os.environ.setdefault("OPENAI_MODEL", cfg.model.model)
+        if cfg.model.resolved_api_key():
+            os.environ.setdefault("OPENAI_API_KEY", cfg.model.resolved_api_key())
+
     if not os.environ.get("OPENAI_API_KEY"):
-        print("error: OPENAI_API_KEY not set.", file=sys.stderr)
-        print(f"  run: uiu --workspace {ws_path} config --api-key sk-xxx", file=sys.stderr)
+        print("error: 还没有 API key。运行 `uiu model` 配置，或 `uiu model --set-api-key sk-xxx`", file=sys.stderr)
         return 2
 
     client = make_client()

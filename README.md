@@ -87,12 +87,17 @@ uiu show
 ```
 
 ### `model`
-查看 / 修改模型配置（写入 `workspace/config.yaml`）：
+交互式切换模型（Hermes 风格）：
 ```
-uiu model
+uiu model                          # 进入交互向导：选 provider → 选模型 → 填 key → 测试连接
+```
+内置 9 个 provider 预设：OpenAI / DeepSeek / Moonshot(Kimi) / Qwen / Ollama(本地) / vLLM(本地) / OpenRouter / SiliconFlow / 自定义。
+也可以非交互设置：
+```
 uiu model --set-model deepseek-chat
 uiu model --set-base-url https://api.moonshot.cn/v1
 uiu model --set-api-key-env MOONSHOT_API_KEY
+uiu model --set-api-key sk-xxx     # 写入当前 api_key_env 到 .env
 uiu model --set-temperature 0.3
 uiu model --set-max-tokens 8192
 ```

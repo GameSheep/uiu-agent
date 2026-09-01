@@ -12,9 +12,11 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
+from pathlib import Path
 
 
 @dataclass
@@ -22,6 +24,7 @@ class ProviderProfile:
     """Declarative description of an inference provider (Hermes-style)."""
 
     name: str                       # slug, e.g. "deepseek"
+    aliases: tuple = ()             # alternative names, e.g. ("claude", "kimi")
     display_name: str = ""
     api_mode: str = "chat_completions"   # chat_completions | anthropic_messages | bedrock_converse
     base_url: str = ""
@@ -81,27 +84,37 @@ class ProviderProfile:
 
 
 # ---------------------------------------------------------------------------
-# Registry (Hermes: plugins/model-providers/*.py; uiu: this file for now)
+# Registry — Hermes-aligned: lazy discovery, last-writer-wins, user overrides.
 # ---------------------------------------------------------------------------
 
 _PROFILES: dict[str, ProviderProfile] = {}
+_ALIASES: dict[str, str] = {}
 _MODELS_CACHE: dict[str, list[str]] = {}
+_discovered = False
 
 
-def register(profile: ProviderProfile) -> None:
+def register_provider(profile: ProviderProfile) -> None:
+    """Register a provider profile by name and aliases.
+
+    Later registrations with the same name replace earlier ones — so user
+    plugins under ~/.uiu/plugins/model-providers/ can override built-ins
+    without editing code. (Hermes: last-writer-wins.)
+    """
     _PROFILES[profile.name] = profile
+    for alias in profile.aliases:
+        _ALIASES[alias] = profile.name
 
 
 def get_profile(name: str) -> ProviderProfile | None:
-    return _PROFILES.get(name)
-
-
-def list_profiles() -> list[ProviderProfile]:
-    return list(_PROFILES.values())
+    """Look up a provider profile by name or alias (Hermes get_provider_profile)."""
+    _ensure_discovered()
+    canonical = _ALIASES.get(name, name)
+    return _PROFILES.get(canonical)
 
 
 def find_profile(name: str) -> ProviderProfile | None:
-    """Case-insensitive lookup."""
+    """Case-insensitive lookup (legacy helper)."""
+    _ensure_discovered()
     if name in _PROFILES:
         return _PROFILES[name]
     low = name.lower()
@@ -111,12 +124,71 @@ def find_profile(name: str) -> ProviderProfile | None:
     return None
 
 
-def load_builtin_profiles() -> None:
-    """Register builtin provider profiles (idempotent)."""
-    if _PROFILES:
+def list_profiles() -> list[ProviderProfile]:
+    """Return all registered provider profiles (one per canonical name)."""
+    _ensure_discovered()
+    return list(_PROFILES.values())
+
+
+# -- plugin discovery (Hermes _discover_providers) ------------------------
+
+def _user_plugins_dir() -> Path | None:
+    """~/.uiu/plugins/model-providers/ if it exists (Hermes $HERMES_HOME)."""
+    try:
+        d = Path.home() / ".uiu" / "plugins" / "model-providers"
+        return d if d.is_dir() else None
+    except Exception:
+        return None
+
+
+def _import_plugin_dir(plugin_dir: Path, source: str) -> None:
+    """Import a plugin dir's __init__.py so it self-registers (Hermes contract)."""
+    import importlib.util
+    import sys
+
+    init_file = plugin_dir / "__init__.py"
+    if not init_file.exists():
         return
+    safe_name = plugin_dir.name.replace("-", "_")
+    module_name = f"_uiu_{source}_provider_{safe_name}"
+    if module_name in sys.modules:
+        return
+    try:
+        spec = importlib.util.spec_from_file_location(
+            module_name, init_file, submodule_search_locations=[str(plugin_dir)]
+        )
+        if spec is None or spec.loader is None:
+            return
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
+        spec.loader.exec_module(module)
+    except Exception as exc:
+        print(f"[providers] failed to load {source} plugin {plugin_dir.name}: {exc}", file=sys.stderr)
+        sys.modules.pop(module_name, None)
+
+
+def load_builtin_profiles() -> None:
+    """Register builtin profiles + scan user plugins (idempotent)."""
+    _ensure_discovered()
+
+
+def _ensure_discovered() -> None:
+    global _discovered
+    if _discovered:
+        return
+    _discovered = True
+
+    # 1. built-in profiles (bundled, like Hermes plugins/model-providers)
     for p in _BUILTIN:
-        register(p)
+        register_provider(p)
+
+    # 2. user plugins — override built-ins on name collision (last-writer-wins)
+    user_dir = _user_plugins_dir()
+    if user_dir is not None:
+        for child in sorted(user_dir.iterdir()):
+            if not child.is_dir() or child.name.startswith(("_", ".")):
+                continue
+            _import_plugin_dir(child, "user")
 
 
 # ---------------------------------------------------------------------------

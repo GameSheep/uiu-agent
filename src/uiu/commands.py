@@ -644,6 +644,81 @@ def cmd_version(args) -> int:
     return 0
 
 
+# ---------- plugins (provider plugins) ----------
+
+def _plugins_dir() -> Path:
+    return Path.home() / ".uiu" / "plugins" / "model-providers"
+
+
+def cmd_plugins(args) -> int:
+    if args.action == "path":
+        print(_plugins_dir())
+        return 0
+
+    if args.action == "list":
+        d = _plugins_dir()
+        if not d.is_dir():
+            print(f"(no plugins dir — run: uiu plugins new <name>)")
+            return 0
+        found = False
+        for child in sorted(d.iterdir()):
+            if child.is_dir() and (child / "__init__.py").exists():
+                print(f"  {child.name}/")
+                found = True
+        if not found:
+            print(f"(no plugins in {d})")
+        return 0
+
+    if args.action == "new":
+        name = args.name
+        d = _plugins_dir() / name
+        if d.exists():
+            _print_err(f"plugin already exists: {d}")
+            return 2
+        d.mkdir(parents=True, exist_ok=True)
+        safe = name.replace("-", "_")
+        (d / "__init__.py").write_text(
+            f'''"""{name} provider plugin — uiu (Hermes-style).
+
+Self-registers a ProviderProfile on import. Drop this dir into
+~/.uiu/plugins/model-providers/ and it shows up in `uiu model`
+automatically. Restart uiu (or clear the registry) after editing.
+"""
+from uiu.providers import ProviderProfile, register_provider
+
+# --- edit below ---
+profile = ProviderProfile(
+    name="{safe}",
+    aliases=(),
+    display_name="{name}",
+    description="One-line description shown in the picker",
+    base_url="https://api.example.com/v1",
+    api_key_env="{safe.upper()}_API_KEY",
+    fallback_models=("model-a", "model-b"),
+    api_mode="chat_completions",   # or anthropic_messages
+    auth_type="api_key",           # api_key | none
+)
+
+register_provider(profile)
+''',
+            encoding="utf-8",
+        )
+        (d / "plugin.yaml").write_text(
+            f"""name: {name}-provider
+kind: model-provider
+version: 1.0.0
+description: {name} provider
+author: you
+""",
+            encoding="utf-8",
+        )
+        _print_ok(f"created plugin: {d}")
+        print("  edit __init__.py, then run `uiu model` to see it")
+        return 0
+
+    return 2
+
+
 # ---------- publish ----------
 
 def cmd_publish(args) -> int:

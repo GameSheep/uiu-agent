@@ -104,6 +104,14 @@ def _build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("version", help="print version")
 
+    # plugins
+    ppl = sub.add_parser("plugins", help="manage provider plugins (~/.uiu/plugins/model-providers/)")
+    ppl_sub = ppl.add_subparsers(dest="action", metavar="<action>", required=True)
+    ppl_sub.add_parser("list", help="list installed provider plugins")
+    ppl_new = ppl_sub.add_parser("new", help="scaffold a new provider plugin from template")
+    ppl_new.add_argument("name", help="provider name (directory name)")
+    ppl_sub.add_parser("path", help="print plugins directory")
+
     # publish
     pp = sub.add_parser("publish", help="build & upload to PyPI")
     pp.add_argument("--test", action="store_true", help="publish to TestPyPI (dry run for real PyPI)")
@@ -180,7 +188,7 @@ def _run_tui(args, parser: argparse.ArgumentParser) -> int:
 def _dispatch(args, parser: argparse.ArgumentParser) -> int:
     from .commands import (
         cmd_channel, cmd_config, cmd_init, cmd_model, cmd_show,
-        cmd_update, cmd_version, cmd_skills, cmd_publish,
+        cmd_update, cmd_version, cmd_skills, cmd_publish, cmd_plugins,
     )
 
     if args.version or args.cmd == "version":
@@ -195,6 +203,7 @@ def _dispatch(args, parser: argparse.ArgumentParser) -> int:
         "channel": cmd_channel,
         "update": cmd_update,
         "publish": cmd_publish,
+        "plugins": cmd_plugins,
     }
     handler = handlers.get(args.cmd)
     if handler is None:

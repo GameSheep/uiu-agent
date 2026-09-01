@@ -153,6 +153,19 @@ uiu publish                          # 构建 + 上传到 PyPI（需要 PYPI_TOK
 uiu publish --test                   # 构建 + 上传到 TestPyPI 试水
 ```
 
+### `plugins`（provider 插件，Hermes 风格）
+```
+uiu plugins list                     # 列出已安装的用户 provider 插件
+uiu plugins new my-provider          # 从模板脚手架一个新 provider 插件
+uiu plugins path                     # 打印插件目录（~/.uiu/plugins/model-providers/）
+```
+
+**插件机制（对齐 Hermes）：**
+- 插件放 `~/.uiu/plugins/model-providers/<name>/`，含 `__init__.py`（调 `register_provider(profile)`）+ `plugin.yaml`（manifest）
+- 首次调用时懒发现（`uiu model` / `uiu show` 触发）
+- **用户插件覆盖内置**（last-writer-wins）——改内置 provider 不用动代码
+- 加 provider 三步：`uiu plugins new my-provider` → 编辑 `__init__.py` 的 base_url/key 名/模型列表 → `uiu model` 里就能选
+
 ### `version`
 ```
 uiu version

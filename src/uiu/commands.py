@@ -503,11 +503,11 @@ def cmd_publish(args) -> int:
     # 1. build
     print("· building sdist + wheel…")
     rc = subprocess.run(
-        [sys.executable, "-m", "pip", "install", "--quiet", "build"],
+        [sys.executable, "-m", "pip", "install", "--quiet", "build", "twine"],
         check=False,
     )
     if rc.returncode != 0:
-        _print_err("pip install build failed")
+        _print_err("pip install build/twine failed")
         return 1
     rc = subprocess.run([sys.executable, "-m", "build", "--sdist", "--wheel"], check=False)
     if rc.returncode != 0:

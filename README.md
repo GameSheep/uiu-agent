@@ -5,12 +5,29 @@
 ## 它能做什么
 
 - 跟你多轮对话，记住上下文（同一会话内）。
-- 自动调用 3 个内置工具：`shell_exec` / `read_file` / `write_file`。
+- 自动调用 8 个内置工具：`shell_exec` / `read_file` / `write_file` + **5 个自学习工具**。
 - 自动调用 `workspace/skills/*/SKILL.md` 里声明的 skill。
 - 你的"人设"写在 `workspace/SOUL.md` 里——改它，agent 就变样。
 - 长记忆写在 `workspace/MEMORY.md`——对话里 `/memory <note>` 一键追加。
-- **完整 CLI**：配置模型、添加 skill、加 channel（目前支持 Telegram）、更新代码。
+- **自我学习（Hermes learning loop）**：主动记记忆、沉淀技能、改进技能。
+- **完整 CLI**：配置模型（34 provider）、加 skill、加 channel（Telegram/飞书/企微/钉钉/Discord/Slack）、更新代码。
 - **可发布到 PyPI**：`uiu publish` 一行构建 + 上传，全世界 `pip install uiu`。
+
+## 自我学习（Hermes 对齐）
+
+agent 内建一套"learning loop"，跨会话累积知识：
+
+| 工具 | 干嘛 | 触发时机 |
+|---|---|---|
+| `memory_add` | 追加一条记忆（带时间戳） | 用户透露持久偏好/事实时主动记 |
+| `memory_recall` | 读回长期记忆 | 需要跨会话知识时 |
+| `memory_replace` | 更新已有记忆 | 信息过时 |
+| `skill_create` | 把成功方法沉淀成 SKILL.md | 发现可复用流程时 |
+| `skill_improve` | 改进已有技能（追加使用记录） | 发现更优做法时 |
+
+- **周期 nudge**：每 5 轮对话自动提示 agent"这段有什么值得沉淀的"
+- **跨会话**：记忆和技能都落盘在 workspace，下次启动还在
+- 写进了 SOUL.md 人设：agent 知道该主动学，不用你提醒
 
 ## 安装（发布后）
 

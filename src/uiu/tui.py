@@ -16,7 +16,7 @@ from rich.panel import Panel
 
 from . import tools
 from .agent import run_turn
-from .workspace import Workspace
+from .workspace import Workspace, load_workspace
 
 console = Console()
 
@@ -77,6 +77,8 @@ def repl(client: OpenAI, ws: Workspace, model: str = "", cfg=None) -> int:
         f"type /help for commands[/dim]",
         border_style="green",
     ))
+
+    turn_count = 0  # for periodic self-learn nudge
 
     while True:
         try:
@@ -149,6 +151,28 @@ def repl(client: OpenAI, ws: Workspace, model: str = "", cfg=None) -> int:
                 on_tool_call=_on_tool,
                 on_tool_result=_on_tool_result,
             )
+            # periodic self-learn nudge (Hermes "nudges itself to persist knowledge")
+            turn_count += 1
+            if turn_count % 5 == 0:
+                try:
+                    from .learning import nudge_prompt
+                    console.print("\n[dim]⋯ 自学习检查[/dim]")
+                    messages.append({"role": "user", "content": nudge_prompt()})
+                    run_turn(
+                        client=client,
+                        messages=messages,
+                        tool_schemas=tool_schemas,
+                        skills=ws.skills,
+                        model=model,
+                        cfg=cfg,
+                        on_text=_on_text,
+                        on_tool_call=_on_tool,
+                        on_tool_result=_on_tool_result,
+                    )
+                    # reload skills so newly created ones are picked up
+                    ws = load_workspace(ws.root)
+                except Exception as e:
+                    console.print(f"[dim](nudge skipped: {e})[/dim]")
         except KeyboardInterrupt:
             console.print("\n[dim](interrupted)[/dim]")
         except Exception as e:

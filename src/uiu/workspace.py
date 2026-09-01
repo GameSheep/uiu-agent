@@ -90,10 +90,10 @@ class Workspace:
 
 
 def find_workspace() -> Path:
-    """Locate workspace dir: $MYAGENT_WORKSPACE > ./workspace > ~/.my-agent/workspace."""
-    env = os.environ.get("MYAGENT_WORKSPACE")
+    """Locate workspace dir: $UIU_WORKSPACE > ./workspace > ~/.uiu/workspace."""
+    env = os.environ.get("UIU_WORKSPACE")
     candidates = [Path(env).expanduser()] if env else []
-    candidates += [Path.cwd() / "workspace", Path.home() / ".my-agent" / "workspace"]
+    candidates += [Path.cwd() / "workspace", Path.home() / ".uiu" / "workspace"]
     for p in candidates:
         if (p / "SOUL.md").exists() or (p / "IDENTITY.md").exists() or p.is_dir():
             return p

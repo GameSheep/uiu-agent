@@ -1,4 +1,4 @@
-# my-agent
+# uiu
 
 > 一个**最小可跑**的个人 IP agent 骨架。借鉴 Hermes Agent 的 SOUL/skills/memory 模式，但砍到只剩核心。
 
@@ -14,7 +14,7 @@
 ## 安装
 
 ```powershell
-cd E:\Code\Personal\agent\my-agent
+cd E:\Code\Personal\agent\uiu
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -e .
@@ -23,74 +23,74 @@ pip install -e .
 ## 快速上手
 
 ```powershell
-my-agent init                                          # 建 workspace
-my-agent config --api-key sk-xxx                       # 写 API key
-my-agent model --set-model deepseek-chat \             # 换模型（DeepSeek/Moonshot/Ollama 都行）
+uiu init                                          # 建 workspace
+uiu config --api-key sk-xxx                       # 写 API key
+uiu model --set-model deepseek-chat \             # 换模型（DeepSeek/Moonshot/Ollama 都行）
               --set-base-url https://api.deepseek.com/v1
-my-agent show                                          # 看当前配置
-my-agent                                               # 进 TUI 开聊
+uiu show                                          # 看当前配置
+uiu                                               # 进 TUI 开聊
 ```
 
 ## 完整 CLI 参考
 
 ### 默认行为
 ```
-my-agent                          # 不带参数 → 进 TUI REPL
+uiu                          # 不带参数 → 进 TUI REPL
 ```
 
 ### `init`
 第一次跑：创建 `workspace/` + `.env` 模板 + 必要目录。
 ```
-my-agent init
+uiu init
 ```
 
 ### `show`
 打印当前生效的配置（model + channels + secrets 状态）：
 ```
-my-agent show
+uiu show
 ```
 
 ### `model`
 查看 / 修改模型配置（写入 `workspace/config.yaml`）：
 ```
-my-agent model
-my-agent model --set-model deepseek-chat
-my-agent model --set-base-url https://api.moonshot.cn/v1
-my-agent model --set-api-key-env MOONSHOT_API_KEY
-my-agent model --set-temperature 0.3
-my-agent model --set-max-tokens 8192
+uiu model
+uiu model --set-model deepseek-chat
+uiu model --set-base-url https://api.moonshot.cn/v1
+uiu model --set-api-key-env MOONSHOT_API_KEY
+uiu model --set-temperature 0.3
+uiu model --set-max-tokens 8192
 ```
 
 ### `config`
 管理 secrets（写入 `workspace/.env`）：
 ```
-my-agent config --api-key sk-xxx                      # 写到 model.api_key_env 那把 key
-my-agent config --set-secret TELEGRAM_BOT_TOKEN=...   # 任意 key=value
-my-agent config --list                                # 列出所有 secret（默认打码）
-my-agent config --list --show-values                  # 明文列出
-my-agent config --unset-secret TELEGRAM_BOT_TOKEN
+uiu config --api-key sk-xxx                      # 写到 model.api_key_env 那把 key
+uiu config --set-secret TELEGRAM_BOT_TOKEN=...   # 任意 key=value
+uiu config --list                                # 列出所有 secret（默认打码）
+uiu config --list --show-values                  # 明文列出
+uiu config --unset-secret TELEGRAM_BOT_TOKEN
 ```
 
 ### `skills`
 管理 skill：
 ```
-my-agent skills list                                  # 列出已加载 skill
-my-agent skills add my_skill                          # 按模板新建
-my-agent skills edit my_skill                         # 用 $EDITOR 打开
-my-agent skills path                                  # 打印 skills 目录
+uiu skills list                                  # 列出已加载 skill
+uiu skills add my_skill                          # 按模板新建
+uiu skills edit my_skill                         # 用 $EDITOR 打开
+uiu skills path                                  # 打印 skills 目录
 ```
 
 ### `channel`
 管理外部渠道。目前 adapter：**telegram**（用官方 Bot API 做 token 校验）。
 ```
-my-agent channel list
-my-agent channel add tg-main --type telegram          # 会自动用 TELEGRAM_BOT_TOKEN
-my-agent channel add tg-main --type telegram --secret-env MY_TG_TOKEN
-my-agent channel add tg-main --type telegram -o polling=true -o timeout=30
-my-agent channel test tg-main                         # 调 getMe 验证 token
-my-agent channel disable tg-main                      # 临时关掉
-my-agent channel enable tg-main
-my-agent channel remove tg-main
+uiu channel list
+uiu channel add tg-main --type telegram          # 会自动用 TELEGRAM_BOT_TOKEN
+uiu channel add tg-main --type telegram --secret-env MY_TG_TOKEN
+uiu channel add tg-main --type telegram -o polling=true -o timeout=30
+uiu channel test tg-main                         # 调 getMe 验证 token
+uiu channel disable tg-main                      # 临时关掉
+uiu channel enable tg-main
+uiu channel remove tg-main
 ```
 
 接 Telegram 的真正 gateway（轮询消息、转给 agent）**没实现**，只有 token 校验。
@@ -98,18 +98,18 @@ my-agent channel remove tg-main
 
 ### `update`
 ```
-my-agent update self                                  # 重装自己（pip install -e .）
-my-agent update skills                                # 同步默认 skills 到 workspace
+uiu update self                                  # 重装自己（pip install -e .）
+uiu update skills                                # 同步默认 skills 到 workspace
 ```
 
 ### `version`
 ```
-my-agent version
+uiu version
 ```
 
 ## TUI 内置命令
 
-在 TUI 内（`my-agent` 不带参数）：
+在 TUI 内（`uiu` 不带参数）：
 
 | 命令 | 干嘛 |
 |---|---|
@@ -128,9 +128,9 @@ my-agent version
 3. **填 USER.md**：告诉它你是谁。
 4. **加 skill**：`workspace/skills/<name>/SKILL.md`
    - 简单 skill：声明 `exec: <内置名>`（如 `exec: echo`），再用 ```tool_schema 块声明参数。
-   - 复杂 skill：在 `src/myagent/skills_runtime.py` 里注册 Python 函数当 builtin。
-5. **加 channel**：`my-agent channel add <name> --type telegram`
-   然后 `my-agent config --set-secret TELEGRAM_BOT_TOKEN=<botfather 给你的 token>`
+   - 复杂 skill：在 `src/uiu/skills_runtime.py` 里注册 Python 函数当 builtin。
+5. **加 channel**：`uiu channel add <name> --type telegram`
+   然后 `uiu config --set-secret TELEGRAM_BOT_TOKEN=<botfather 给你的 token>`
 
 ## 配置存储
 
@@ -145,11 +145,11 @@ my-agent version
 ## 目录结构
 
 ```
-my-agent/
+uiu/
 ├── pyproject.toml
 ├── README.md
 ├── .env.example
-├── src/myagent/                       # 代码（~1100 行）
+├── src/uiu/                       # 代码（~1100 行）
 │   ├── main.py                        # CLI 入口（argparse subparsers）
 │   ├── commands.py                    # 8 个子命令实现
 │   ├── config.py                      # config.yaml + .env 读写

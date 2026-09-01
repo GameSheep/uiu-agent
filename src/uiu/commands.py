@@ -29,7 +29,7 @@ from .workspace import load_workspace
 # ---------- helpers ----------
 
 def _workspace(args) -> Path:
-    ws_arg = getattr(args, "workspace", None) or os.environ.get("MYAGENT_WORKSPACE")
+    ws_arg = getattr(args, "workspace", None) or os.environ.get("UIU_WORKSPACE")
     if ws_arg:
         return Path(ws_arg).expanduser()
     return Path.cwd() / "workspace"
@@ -70,7 +70,7 @@ def cmd_init(args) -> int:
         print()
         print("next: edit your API key in one of two ways")
         print(f"  1) edit {ws / '.env'} directly")
-        print(f"  2) my-agent config --api-key sk-xxx")
+        print(f"  2) uiu config --api-key sk-xxx")
     return 0
 
 
@@ -93,7 +93,7 @@ def cmd_show(args) -> int:
     print()
     print(f"channels ({len(cfg.channels)}):")
     if not cfg.channels:
-        print("  (none — try: my-agent channel add telegram)")
+        print("  (none — try: uiu channel add telegram)")
     for c in cfg.channels:
         status = "enabled" if c.enabled else "disabled"
         token = c.resolved_token()
@@ -187,7 +187,7 @@ def cmd_config(args) -> int:
             print(f"  {k} = {shown}")
         return 0
 
-    print("usage: my-agent config [--api-key KEY | --set-secret K=V | --unset-secret K | --list]")
+    print("usage: uiu config [--api-key KEY | --set-secret K=V | --unset-secret K | --list]")
     return 2
 
 
@@ -218,7 +218,7 @@ def cmd_skills(args) -> int:
             print(f"  {name:<24} {desc[:70]}")
             any_shown = True
         if not any_shown:
-            print("(no skills — try: my-agent skills add echo)")
+            print("(no skills — try: uiu skills add echo)")
         return 0
 
     if args.action == "add":
@@ -241,7 +241,7 @@ def cmd_skills(args) -> int:
         target.mkdir(parents=True, exist_ok=True)
         (target / "SKILL.md").write_text(template, encoding="utf-8")
         _print_ok(f"created {target / 'SKILL.md'}")
-        print("edit it, then it'll be picked up on next `my-agent` start")
+        print("edit it, then it'll be picked up on next `uiu` start")
         return 0
 
     if args.action == "edit":
@@ -297,7 +297,7 @@ def cmd_channel(args) -> int:
         save_config(ws, cfg)
         _print_ok(f"added channel '{name}' [{ctype}]")
         if not os.environ.get(secret_env) and not parse_env_file(ws / ".env").get(secret_env):
-            print(f"  next: my-agent config --set-secret {secret_env}=<token>")
+            print(f"  next: uiu config --set-secret {secret_env}=<token>")
             print(f"        (or set it via your platform)")
         return 0
 
@@ -324,7 +324,7 @@ def cmd_channel(args) -> int:
             return 2
         token = c.resolved_token()
         if not token:
-            _print_err(f"{c.secret_env} not set in .env or env. run: my-agent config --set-secret {c.secret_env}=...")
+            _print_err(f"{c.secret_env} not set in .env or env. run: uiu config --set-secret {c.secret_env}=...")
             return 2
         # dispatch to adapter
         try:
@@ -407,7 +407,7 @@ def _update_self() -> int:
             rc = _git(["pull", "--ff-only"])
             if rc != 0:
                 _print_err("git pull failed (maybe local edits conflict with upstream?)")
-                print("  → fix conflicts, or skip remote updates with: my-agent update self --no-pull")
+                print("  → fix conflicts, or skip remote updates with: uiu update self --no-pull")
                 ok = False
         else:
             print("· git: no remote configured — skipping pull (local repo only)")
@@ -459,7 +459,7 @@ def _update_default_skills(ws: Path) -> int:
     """Sync default skills shipped with the package into workspace/skills/_default/."""
     import importlib.resources as resources
     try:
-        pkg_root = resources.files("myagent")
+        pkg_root = resources.files("uiu")
     except Exception:
         pkg_root = None
 
@@ -486,5 +486,5 @@ def _update_default_skills(ws: Path) -> int:
 
 def cmd_version(args) -> int:
     from . import __version__
-    print(f"my-agent {__version__}")
+    print(f"uiu {__version__}")
     return 0

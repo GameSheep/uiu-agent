@@ -71,7 +71,7 @@ def repl(client: OpenAI, ws: Workspace) -> int:
         tool_schemas.append(skill.to_tool_def())
 
     console.print(Panel.fit(
-        f"[bold green]my-agent[/bold green] — workspace: {ws.root}\n"
+        f"[bold green]uiu[/bold green] — workspace: {ws.root}\n"
         f"[dim]model: {client.base_url if hasattr(client, 'base_url') else ''} | "
         f"skills: {len(ws.skills)} | built-in tools: 3 | "
         f"type /help for commands[/dim]",

@@ -7,8 +7,8 @@ The actual *gateway* (long-running polling / webhook) is intentionally out of
 scope for the skeleton — only token validation is here, so you can verify
 credentials without spinning up a bot.
 
-Add real gateway code later under e.g. myagent/gateway_telegram.py and wire it
-into a `my-agent serve` command.
+Add real gateway code later under e.g. uiu/gateway_telegram.py and wire it
+into a `uiu serve` command.
 """
 
 from __future__ import annotations
@@ -38,7 +38,7 @@ class _TelegramAdapter:
     def test(self, token: str, options: dict) -> tuple[bool, str]:
         url = f"https://api.telegram.org/bot{token}/getMe"
         try:
-            req = urllib.request.Request(url, headers={"User-Agent": "my-agent/0.1"})
+            req = urllib.request.Request(url, headers={"User-Agent": "uiu/0.1"})
             with urllib.request.urlopen(req, timeout=15) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
         except urllib.error.HTTPError as e:

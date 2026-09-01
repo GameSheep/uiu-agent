@@ -1,15 +1,15 @@
-"""CLI entry: argparse subparsers dispatching to myagent.commands.
+"""CLI entry: argparse subparsers dispatching to uiu.commands.
 
 Usage:
-    my-agent                              # start TUI REPL (default)
-    my-agent init                         # bootstrap workspace + .env
-    my-agent show                         # print current config
-    my-agent model [--set-model X]        # view/update model config
-    my-agent config [--api-key K]         # manage secrets
-    my-agent skills {list,add,edit,path}  # manage skills
-    my-agent channel {list,add,...}       # manage channels (telegram, etc.)
-    my-agent update {self,skills}         # update code or sync default skills
-    my-agent version
+    uiu                              # start TUI REPL (default)
+    uiu init                         # bootstrap workspace + .env
+    uiu show                         # print current config
+    uiu model [--set-model X]        # view/update model config
+    uiu config [--api-key K]         # manage secrets
+    uiu skills {list,add,edit,path}  # manage skills
+    uiu channel {list,add,...}       # manage channels (telegram, etc.)
+    uiu update {self,skills}         # update code or sync default skills
+    uiu version
 """
 
 from __future__ import annotations
@@ -37,7 +37,7 @@ def _load_dotenv(path: Path = Path(".env")) -> None:
 
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        prog="my-agent",
+        prog="uiu",
         description="A minimal personal-IP agent skeleton. Edit workspace/SOUL.md to make it yours.",
     )
     p.add_argument("--workspace", "-w", help="Path to workspace dir (default: ./workspace)")
@@ -116,7 +116,7 @@ def _run_tui(args, parser: argparse.ArgumentParser) -> int:
     ws_path = _ws(args)
     if not ws_path.exists():
         print(f"workspace not found: {ws_path}", file=sys.stderr)
-        print("run: my-agent init", file=sys.stderr)
+        print("run: uiu init", file=sys.stderr)
         return 2
 
     cfg = load_config(ws_path)
@@ -128,7 +128,7 @@ def _run_tui(args, parser: argparse.ArgumentParser) -> int:
 
     if not os.environ.get("OPENAI_API_KEY"):
         print("error: OPENAI_API_KEY not set.", file=sys.stderr)
-        print(f"  run: my-agent --workspace {ws_path} config --api-key sk-xxx", file=sys.stderr)
+        print(f"  run: uiu --workspace {ws_path} config --api-key sk-xxx", file=sys.stderr)
         return 2
 
     client = make_client()

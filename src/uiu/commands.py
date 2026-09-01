@@ -77,19 +77,26 @@ def cmd_init(args) -> int:
 # ---------- show ----------
 
 def cmd_show(args) -> int:
+    from .providers import get_profile, load_builtin_profiles
+    load_builtin_profiles()
     ws = _workspace(args)
     cfg = load_config(ws)
+    m = cfg.model
+    prof = get_profile(m.provider)
+    base_url = m.base_url or (prof.base_url if prof else "(未设)")
+    key_env = m.api_key_env or (prof.api_key_env if prof else "")
     print(f"workspace:  {ws}")
     print(f"config:     {config_yaml_path(ws)}")
     print(f"agent_name: {cfg.agent_name}")
     print()
     print("model:")
-    print(f"  provider:    {cfg.model.provider}")
-    print(f"  base_url:    {cfg.model.base_url}")
-    print(f"  model:       {cfg.model.model}")
-    print(f"  api_key_env: {cfg.model.api_key_env}  -> {'set' if cfg.model.resolved_api_key() else 'NOT SET'}")
-    print(f"  temperature: {cfg.model.temperature}")
-    print(f"  max_tokens:  {cfg.model.max_tokens}")
+    print(f"  provider:    {m.provider}")
+    print(f"  base_url:    {base_url}")
+    print(f"  model:       {m.model}")
+    print(f"  api_mode:    {m.api_mode}")
+    print(f"  api_key_env: {key_env}  -> {'set' if m.resolved_api_key() else 'NOT SET'}")
+    print(f"  temperature: {m.temperature}")
+    print(f"  max_tokens:  {m.max_tokens}")
     print()
     print(f"channels ({len(cfg.channels)}):")
     if not cfg.channels:
@@ -108,6 +115,15 @@ def cmd_model(args) -> int:
     ws = _workspace(args)
     cfg = load_config(ws)
     m = cfg.model
+
+    # --refresh: wipe model picker cache (Hermes behavior)
+    if getattr(args, "refresh", False):
+        try:
+            from .providers import _MODELS_CACHE
+            _MODELS_CACHE.clear()
+            print("  Cleared model picker cache.")
+        except Exception:
+            pass
 
     # non-interactive: any --set-* flag present
     changed = False
@@ -148,82 +164,100 @@ def cmd_model(args) -> int:
 
 
 def _model_wizard(ws: Path, cfg: AppConfig) -> int:
-    from .providers import PROVIDERS, find as find_provider
+    from .providers import get_profile, list_profiles, load_builtin_profiles
 
+    load_builtin_profiles()
     m = cfg.model
+    cur_profile = get_profile(m.provider)
     print(f"当前模型: [{m.provider}] {m.model}")
-    print(f"  base_url: {m.base_url}")
-    print(f"  api_key_env: {m.api_key_env} -> {'已设置' if m.resolved_api_key() else '未设置'}")
+    print(f"  base_url: {m.base_url or (cur_profile.base_url if cur_profile else '(未设)')}")
+    print(f"  api_mode: {m.api_mode}")
     print()
+
+    profiles = list_profiles()
 
     # step 1: choose provider
     print("选择 provider:")
-    for i, p in enumerate(PROVIDERS, 1):
+    for i, p in enumerate(profiles, 1):
         marker = " *" if p.name.lower() == m.provider.lower() else ""
-        print(f"  {i}. {p.name}  ({p.note}){marker}")
-    print(f"  {len(PROVIDERS)+1}. 保持当前配置")
+        print(f"  {i}. {p.display_name}  ({p.description}){marker}")
+    print(f"  {len(profiles)+1}. 保持当前配置")
     try:
-        choice = input(f"> 输入数字 [1-{len(PROVIDERS)+1}]: ").strip()
+        choice = input(f"> 输入数字 [1-{len(profiles)+1}]: ").strip()
     except EOFError:
         return 0
-    if choice == str(len(PROVIDERS) + 1):
+    if choice == str(len(profiles) + 1):
         return 0
     try:
         idx = int(choice) - 1
-        preset = PROVIDERS[idx]
+        profile = profiles[idx]
     except (ValueError, IndexError):
         _print_err("无效选择")
         return 2
 
-    if preset.name == "自定义":
+    if profile.name == "custom":
         m.provider = "custom"
         m.base_url = input("base_url (如 https://api.xxx.com/v1): ").strip() or m.base_url
-        m.api_key_env = input(f"API key 环境变量名 (默认 {m.api_key_env}): ").strip() or m.api_key_env
+        m.api_key_env = input(f"API key 环境变量名 (默认 {m.api_key_env or 'CUSTOM_API_KEY'}): ").strip() or m.api_key_env or "CUSTOM_API_KEY"
         m.model = input("model 名 (如 gpt-4o-mini): ").strip() or m.model
+        api_mode_choice = input(f"api_mode (chat_completions/anthropic_messages, 默认 {m.api_mode}): ").strip()
+        if api_mode_choice:
+            m.api_mode = api_mode_choice
     else:
-        m.provider = preset.name
-        m.base_url = preset.base_url
-        m.api_key_env = preset.api_key_env
-        m.model = preset.default_model
-        if preset.models:
-            print(f"\n{preset.name} 可用模型:")
-            for i, model in enumerate(preset.models, 1):
-                marker = " *" if model == m.model else ""
-                print(f"  {i}. {model}{marker}")
-            print(f"  {len(preset.models)+1}. 自定义")
-            model_choice = input(f"> 输入数字 [1-{len(preset.models)+1}] (默认 {m.model}): ").strip()
-            if model_choice:
-                try:
-                    mi = int(model_choice) - 1
-                    if 0 <= mi < len(preset.models):
-                        m.model = preset.models[mi]
-                    elif model_choice == str(len(preset.models) + 1):
-                        m.model = input("model 名: ").strip()
-                except ValueError:
-                    m.model = model_choice  # 用户直接输入了模型名
+        m.provider = profile.name
+        m.base_url = ""  # empty = use profile default (Hermes clears base_url on switch)
+        m.api_key_env = profile.api_key_env
+        m.api_mode = profile.api_mode
+
+        # step 1b: fetch live model list (Hermes picker behavior), fallback to curated
+        key = m.resolved_api_key()
+        models = profile.available_models(key)
+        if not models:
+            _print_err(f"无法获取 {profile.display_name} 模型列表（无网络/key？）")
+            return 2
+        m.model = models[0] if profile.fallback_models else m.model
+        print(f"\n{profile.display_name} 可用模型 ({'live' if key and models != list(profile.fallback_models) else 'fallback'}):")
+        for i, model in enumerate(models, 1):
+            marker = " *" if model == m.model else ""
+            print(f"  {i}. {model}{marker}")
+        print(f"  {len(models)+1}. 自定义")
+        model_choice = input(f"> 输入数字 [1-{len(models)+1}] (默认 {m.model}): ").strip()
+        if model_choice:
+            try:
+                mi = int(model_choice) - 1
+                if 0 <= mi < len(models):
+                    m.model = models[mi]
+                elif model_choice == str(len(models) + 1):
+                    m.model = input("model 名: ").strip()
+            except ValueError:
+                m.model = model_choice
 
     save_config(ws, cfg)
     _print_ok(f"已保存: {m.provider} / {m.model}")
 
-    # step 2: API key
-    current = m.resolved_api_key()
-    if not current:
-        key_input = input(f"\n输入 {m.api_key_env} (留空跳过): ").strip()
-        if key_input:
-            env_path = ws / ".env"
-            existing = parse_env_file(env_path)
-            existing[m.api_key_env] = key_input
-            write_env_file(env_path, existing)
-            _print_ok(f"已写入 {m.api_key_env}")
-    else:
-        print(f"\n{m.api_key_env} 已设置（{current[:6]}…），如需更换输入新 key:")
-        key_input = input(f"新 {m.api_key_env} (留空保留): ").strip()
-        if key_input:
-            env_path = ws / ".env"
-            existing = parse_env_file(env_path)
-            existing[m.api_key_env] = key_input
-            write_env_file(env_path, existing)
-            _print_ok(f"已更新 {m.api_key_env}")
+    # step 2: API key (skip for auth_type=none providers like ollama)
+    profile = get_profile(m.provider)
+    need_key = profile is None or profile.auth_type != "none"
+    if need_key:
+        current = m.resolved_api_key()
+        env_name = m.api_key_env or "API_KEY"
+        if not current:
+            key_input = input(f"\n输入 {env_name} (留空跳过): ").strip()
+            if key_input:
+                env_path = ws / ".env"
+                existing = parse_env_file(env_path)
+                existing[env_name] = key_input
+                write_env_file(env_path, existing)
+                _print_ok(f"已写入 {env_name}")
+        else:
+            print(f"\n{env_name} 已设置（{current[:6]}…），如需更换输入新 key:")
+            key_input = input(f"新 {env_name} (留空保留): ").strip()
+            if key_input:
+                env_path = ws / ".env"
+                existing = parse_env_file(env_path)
+                existing[env_name] = key_input
+                write_env_file(env_path, existing)
+                _print_ok(f"已更新 {env_name}")
 
     # step 3: test connection
     test_choice = input("\n测试连接？[Y/n]: ").strip().lower()
@@ -234,15 +268,21 @@ def _model_wizard(ws: Path, cfg: AppConfig) -> int:
 
 def _test_model_connection(ws: Path, cfg: AppConfig) -> int:
     """Quick connectivity test: send a trivial chat completion."""
+    from .providers import get_profile
     m = cfg.model
     key = m.resolved_api_key()
-    if not key:
+    profile = get_profile(m.provider)
+    base_url = m.base_url or (profile.base_url if profile else "")
+    if not base_url:
+        _print_err("base_url 未设置，跳过测试")
+        return 0
+    if not key and not (profile and profile.auth_type == "none"):
         _print_err(f"{m.api_key_env} 未设置，跳过测试")
         return 0
-    print(f"· 测试 {m.provider} / {m.model} @ {m.base_url} …")
+    print(f"· 测试 {m.provider} / {m.model} @ {base_url} …")
     try:
         from .llm import make_client
-        client = make_client()
+        client = make_client(m)
         resp = client.chat.completions.create(
             model=m.model,
             messages=[{"role": "user", "content": "ping"}],

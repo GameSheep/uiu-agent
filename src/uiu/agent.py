@@ -21,10 +21,15 @@ from .llm import get_model, stream_chat
 
 # ---------- non-streaming call (used to drive tool-use loop) ----------
 
-def _call_once(client: OpenAI, messages: list[dict], tool_schemas: list[dict]) -> dict:
+def _call_once(
+    client: OpenAI,
+    messages: list[dict],
+    tool_schemas: list[dict],
+    model: str,
+) -> dict:
     """One non-streaming chat.completions.create call; returns the assistant message dict."""
     resp = client.chat.completions.create(
-        model=get_model(),
+        model=model,
         messages=messages,
         tools=tool_schemas or None,
         tool_choice="auto" if tool_schemas else None,
@@ -53,6 +58,7 @@ def run_turn(
     messages: list[dict],
     tool_schemas: list[dict],
     skills: list | None = None,
+    model: str = "",
     on_text: Callable[[str], None] | None = None,
     on_tool_call: Callable[[str, dict], None] | None = None,
     on_tool_result: Callable[[str, str], None] | None = None,
@@ -63,9 +69,11 @@ def run_turn(
     tool execution. Calls on_tool_result(name, result) after.
     Returns the final assistant text.
     """
+    if not model:
+        model = get_model()
     while True:
         # Step 1: ask the model
-        assistant_msg = _call_once(client, messages, tool_schemas)
+        assistant_msg = _call_once(client, messages, tool_schemas, model)
 
         # Step 2: did it request tools?
         tool_calls = assistant_msg.pop("tool_calls", None)

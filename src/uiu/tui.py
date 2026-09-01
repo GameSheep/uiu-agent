@@ -57,7 +57,7 @@ def _print_tool_result(name: str, result: str) -> None:
 
 # ---------- main REPL ----------
 
-def repl(client: OpenAI, ws: Workspace) -> int:
+def repl(client: OpenAI, ws: Workspace, model: str = "") -> int:
     history_path = ws.root / "logs" / "history"
     history_path.parent.mkdir(parents=True, exist_ok=True)
     session: PromptSession = PromptSession(history=FileHistory(str(history_path)))
@@ -143,6 +143,7 @@ def repl(client: OpenAI, ws: Workspace) -> int:
                 messages=messages,
                 tool_schemas=tool_schemas,
                 skills=ws.skills,
+                model=model,
                 on_text=_on_text,
                 on_tool_call=_on_tool,
                 on_tool_result=_on_tool_result,

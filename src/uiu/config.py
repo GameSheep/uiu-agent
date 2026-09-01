@@ -31,17 +31,43 @@ except ImportError:
 
 # ---------- model ----------
 
+# api_mode values aligned with Hermes: chat_completions | anthropic_messages | bedrock_converse
+API_MODES = ("chat_completions", "anthropic_messages", "bedrock_converse")
+
+
 @dataclass
 class ModelConfig:
-    provider: str = "openai"          # openai | anthropic | custom
-    base_url: str = "https://api.openai.com/v1"
-    api_key_env: str = "OPENAI_API_KEY"
-    model: str = "gpt-4o-mini"
+    """Hermes-style model slot: provider / default / base_url / api_mode."""
+
+    provider: str = "openai"          # provider slug (from providers registry)
+    default: str = "gpt-4o-mini"      # the actual model id (Hermes calls this `default`)
+    base_url: str = ""                # empty = use provider profile default
+    api_mode: str = "chat_completions"
     temperature: float = 0.7
     max_tokens: int = 4096
+    api_key_env: str = ""             # resolved from provider profile at load; kept for compat
+
+    @property
+    def model(self) -> str:
+        """Backward-compat alias: Hermes config.yaml uses `default`, code uses `.model`."""
+        return self.default
+
+    @model.setter
+    def model(self, value: str) -> None:
+        self.default = value
 
     def resolved_api_key(self) -> str:
-        return os.environ.get(self.api_key_env, "")
+        env_name = self.api_key_env
+        if not env_name:
+            # derive from provider profile if not set
+            try:
+                from .providers import find_profile
+                prof = find_profile(self.provider)
+                if prof:
+                    env_name = prof.api_key_env
+            except Exception:
+                pass
+        return os.environ.get(env_name, "") if env_name else ""
 
 
 # ---------- channel ----------
@@ -75,7 +101,13 @@ class AppConfig:
 
     @classmethod
     def from_dict(cls, d: dict) -> "AppConfig":
-        m = d.get("model") or {}
+        m = dict(d.get("model") or {})
+        # legacy migration: old config.yaml used `model:` as a plain string or
+        # ModelConfig had `model` field; Hermes format uses `default`
+        if isinstance(m, str):
+            m = {"default": m}
+        elif "model" in m and "default" not in m:
+            m["default"] = m.pop("model")
         channels = [ChannelConfig(**c) for c in (d.get("channels") or [])]
         return cls(
             agent_name=d.get("agent_name", "uiu"),

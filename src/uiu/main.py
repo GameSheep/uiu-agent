@@ -50,6 +50,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     # model
     pm = sub.add_parser("model", help="view/switch model interactively (or with --set-*)")
+    pm.add_argument("--refresh", action="store_true", help="re-fetch every provider's live /v1/models list (wipe picker cache)")
     pm.add_argument("--set-provider")
     pm.add_argument("--set-base-url")
     pm.add_argument("--set-model")
@@ -130,14 +131,20 @@ def _run_tui(args, parser: argparse.ArgumentParser) -> int:
         cmd_init(init_ns)
 
     cfg = load_config(ws_path)
-    # sync cfg -> env (so make_client picks up overrides)
-    os.environ.setdefault("OPENAI_BASE_URL", cfg.model.base_url)
-    os.environ.setdefault("OPENAI_MODEL", cfg.model.model)
-    if cfg.model.resolved_api_key():
-        os.environ.setdefault("OPENAI_API_KEY", cfg.model.resolved_api_key())
 
     # First-run UX: no API key -> auto run model wizard
-    if not os.environ.get("OPENAI_API_KEY") and not cfg.model.resolved_api_key():
+    needs_key = cfg.model.resolved_api_key() == ""
+    if needs_key:
+        try:
+            from .providers import get_profile, load_builtin_profiles
+            load_builtin_profiles()
+            prof = get_profile(cfg.model.provider)
+            if prof and prof.auth_type == "none":
+                needs_key = False  # local providers (ollama/vllm) don't need a key
+        except Exception:
+            pass
+
+    if needs_key:
         print("\n[first-run] 还没有配置模型，先配一个（也可以随时用 `uiu model` 切换）")
         import argparse as _argparse
         model_ns = _argparse.Namespace(
@@ -151,18 +158,23 @@ def _run_tui(args, parser: argparse.ArgumentParser) -> int:
             return rc
         # re-read config after wizard
         cfg = load_config(ws_path)
-        os.environ.setdefault("OPENAI_BASE_URL", cfg.model.base_url)
-        os.environ.setdefault("OPENAI_MODEL", cfg.model.model)
-        if cfg.model.resolved_api_key():
-            os.environ.setdefault("OPENAI_API_KEY", cfg.model.resolved_api_key())
 
-    if not os.environ.get("OPENAI_API_KEY"):
-        print("error: 还没有 API key。运行 `uiu model` 配置，或 `uiu model --set-api-key sk-xxx`", file=sys.stderr)
-        return 2
+    # still no key after wizard? only an error if provider actually needs one
+    if not cfg.model.resolved_api_key():
+        try:
+            from .providers import get_profile, load_builtin_profiles
+            load_builtin_profiles()
+            prof = get_profile(cfg.model.provider)
+            if not (prof and prof.auth_type == "none"):
+                print("error: 还没有 API key。运行 `uiu model` 配置，或 `uiu model --set-api-key sk-xxx`", file=sys.stderr)
+                return 2
+        except Exception:
+            print("error: 还没有 API key。运行 `uiu model` 配置，或 `uiu model --set-api-key sk-xxx`", file=sys.stderr)
+            return 2
 
-    client = make_client()
+    client = make_client(cfg.model)
     ws = load_workspace(ws_path)
-    return repl(client, ws)
+    return repl(client, ws, model=cfg.model.default)
 
 
 def _dispatch(args, parser: argparse.ArgumentParser) -> int:

@@ -450,9 +450,16 @@ def cmd_channel(args) -> int:
         ))
         save_config(ws, cfg)
         _print_ok(f"added channel '{name}' [{ctype}]")
-        if not os.environ.get(secret_env) and not parse_env_file(ws / ".env").get(secret_env):
-            print(f"  next: uiu config --set-secret {secret_env}=<token>")
-            print(f"        (or set it via your platform)")
+        if ctype == "telegram":
+            if not os.environ.get(secret_env) and not parse_env_file(ws / ".env").get(secret_env):
+                print(f"  next: uiu config --set-secret {secret_env}=<token>")
+        elif ctype == "feishu":
+            print("  飞书配置: uiu channel add 需带 -o app_id=... -o app_secret=...")
+            print("          或编辑 config.yaml 的 channels[].options")
+        elif ctype == "wecom":
+            print("  企微配置: uiu channel add 需带 -o corpid=... -o corpsecret=... -o agentid=...")
+        print("  启用: uiu channel enable", name)
+        print("  启动网关: uiu serve")
         return 0
 
     if args.action == "enable" or args.action == "disable":
@@ -496,6 +503,8 @@ def cmd_channel(args) -> int:
 def _default_secret_env(ctype: str) -> str:
     return {
         "telegram": "TELEGRAM_BOT_TOKEN",
+        "feishu": "FEISHU_APP_SECRET",
+        "wecom": "WECOM_CORP_SECRET",
         "discord": "DISCORD_BOT_TOKEN",
         "slack": "SLACK_BOT_TOKEN",
         "whatsapp": "WHATSAPP_TOKEN",
@@ -633,6 +642,19 @@ def _update_default_skills(ws: Path) -> int:
         shutil.copytree(str(entry), str(dest))
         copied += 1
     _print_ok(f"synced {copied} default skill(s) into {target}")
+    return 0
+
+
+# ---------- serve (gateway) ----------
+
+def cmd_serve(args) -> int:
+    ws = _workspace(args)
+    cfg = load_config(ws)
+    from .gateway import Gateway
+    from .workspace import load_workspace
+    ws_obj = load_workspace(ws)
+    gw = Gateway(cfg, ws_obj)
+    gw.run(port=args.port)
     return 0
 
 

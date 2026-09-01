@@ -122,20 +122,50 @@ uiu skills path                                  # 打印 skills 目录
 ```
 
 ### `channel`
-管理外部渠道。目前 adapter：**telegram**（用官方 Bot API 做 token 校验）。
+管理外部渠道（Hermes 平台 adapter 风格）。内置 adapter：**telegram / feishu(飞书) / wecom(企业微信)**。
+
+**Telegram：**
 ```
-uiu channel list
-uiu channel add tg-main --type telegram          # 会自动用 TELEGRAM_BOT_TOKEN
-uiu channel add tg-main --type telegram --secret-env MY_TG_TOKEN
-uiu channel add tg-main --type telegram -o polling=true -o timeout=30
-uiu channel test tg-main                         # 调 getMe 验证 token
-uiu channel disable tg-main                      # 临时关掉
-uiu channel enable tg-main
-uiu channel remove tg-main
+uiu channel add tg-main --type telegram
+uiu config --set-secret TELEGRAM_BOT_TOKEN=<BotFather 给的 token>
+uiu channel test tg-main                         # 调 getMe 验证
 ```
 
-接 Telegram 的真正 gateway（轮询消息、转给 agent）**没实现**，只有 token 校验。
-后续如果要长期监听 Telegram 消息，需要在 `channels.py` 加 gateway 函数 + 一个 `serve` 命令。
+**飞书：**
+```
+uiu channel add fs-main --type feishu \
+  -o app_id=cli_xxx -o app_secret=xxx [-o verify_token=xxx]
+uiu channel test fs-main
+```
+
+**企业微信：**
+```
+uiu channel add wc-main --type wecom \
+  -o corpid=wwxxx -o corpsecret=xxx -o agentid=1000002
+uiu channel test wc-main
+```
+
+通用操作：
+```
+uiu channel list                    # 列出所有 channel
+uiu channel disable <name>          # 临时关掉
+uiu channel enable <name>
+uiu channel remove <name>
+```
+
+### `serve`（gateway——核心）
+启动网关：所有 enabled 的 channel 并行跑，消息进来 → agent 回复。
+```
+uiu serve                # 默认 webhook 端口 8765
+uiu serve --port 9000
+```
+
+- **Telegram**：长轮询 `getUpdates`，无需公网
+- **飞书 / 企微**：起本地 HTTP server（`http://0.0.0.0:8765/feishu`、`/wecom`），需要把平台的回调地址指向这里（用内网穿透如 ngrok/frp 暴露公网）
+- 每个 chat_id 独立会话上下文，支持多人群聊/私聊
+- 按 channel 自动路由回复（消息从哪个平台来，回复回哪去）
+
+**Channel 插件**：放 `~/.uiu/channels/<name>/__init__.py`（继承 BaseChannelAdapter，实现 check/start/send），`uiu serve` 自动发现。改平台不用改核心代码。
 
 ### `update`
 ```

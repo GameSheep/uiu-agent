@@ -112,6 +112,10 @@ def _build_parser() -> argparse.ArgumentParser:
     ppl_new.add_argument("name", help="provider name (directory name)")
     ppl_sub.add_parser("path", help="print plugins directory")
 
+    # serve (gateway)
+    pserve = sub.add_parser("serve", help="start gateway: run all enabled channels (telegram/feishu/wecom)")
+    pserve.add_argument("--port", type=int, default=8765, help="webhook port for feishu/wecom (default 8765)")
+
     # publish
     pp = sub.add_parser("publish", help="build & upload to PyPI")
     pp.add_argument("--test", action="store_true", help="publish to TestPyPI (dry run for real PyPI)")
@@ -189,6 +193,7 @@ def _dispatch(args, parser: argparse.ArgumentParser) -> int:
     from .commands import (
         cmd_channel, cmd_config, cmd_init, cmd_model, cmd_show,
         cmd_update, cmd_version, cmd_skills, cmd_publish, cmd_plugins,
+        cmd_serve,
     )
 
     if args.version or args.cmd == "version":
@@ -204,6 +209,7 @@ def _dispatch(args, parser: argparse.ArgumentParser) -> int:
         "update": cmd_update,
         "publish": cmd_publish,
         "plugins": cmd_plugins,
+        "serve": cmd_serve,
     }
     handler = handlers.get(args.cmd)
     if handler is None:

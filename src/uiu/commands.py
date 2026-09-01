@@ -635,8 +635,15 @@ def cmd_publish(args) -> int:
     else:
         repo = "https://upload.pypi.org/legacy/"
         print(f"· uploading to PyPI…")
+
+    # expand dist/* glob explicitly (Windows subprocess doesn't glob)
+    dist_dir = Path("dist")
+    artifacts = sorted(dist_dir.glob("*.whl")) + sorted(dist_dir.glob("*.tar.gz"))
+    if not artifacts:
+        _print_err("no artifacts found in dist/")
+        return 1
     rc = subprocess.run(
-        [sys.executable, "-m", "twine", "upload", "--repository-url", repo, "dist/*", "--non-interactive"],
+        [sys.executable, "-m", "twine", "upload", "--repository-url", repo, *map(str, artifacts), "--non-interactive"],
         env={**os.environ, "TWINE_USERNAME": "__token__", "TWINE_PASSWORD": token},
         check=False,
     )

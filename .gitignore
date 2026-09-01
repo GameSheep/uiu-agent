@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# venv
+.venv/
+venv/
+
+# secrets — NEVER commit these
+workspace/.env
+*.env.local
+
+# logs & temp
+workspace/logs/
+*.log
+smoke_test.py
+cli_smoke.py
+result.txt
+smoke.txt
+_test_workspace/

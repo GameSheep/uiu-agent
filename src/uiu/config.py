@@ -178,8 +178,9 @@ def _save_config_fallback(path: Path, cfg: AppConfig) -> None:
 # ---------- helpers ----------
 
 def ensure_workspace(workspace: Path) -> None:
-    """Create workspace + minimal files if missing."""
+    """Create workspace from bundled template (or minimal fallback) if missing."""
     workspace.mkdir(parents=True, exist_ok=True)
+    _copy_default_workspace(workspace)
     for fname in ("SOUL.md", "IDENTITY.md", "USER.md", "MEMORY.md"):
         p = workspace / fname
         if not p.exists():
@@ -195,3 +196,24 @@ def ensure_workspace(workspace: Path) -> None:
             "OPENAI_MODEL=gpt-4o-mini\n",
             encoding="utf-8",
         )
+
+
+def _copy_default_workspace(workspace: Path) -> None:
+    """Copy bundled _default_workspace templates into workspace (never overwrites)."""
+    import importlib.resources as resources
+
+    try:
+        src = resources.files("uiu") / "_default_workspace"
+        if not src.is_dir():
+            return
+    except Exception:
+        return
+    for entry in src.rglob("*"):
+        if entry.is_dir():
+            continue
+        rel = entry.relative_to(src)
+        dest = workspace / rel
+        if dest.exists():
+            continue
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(entry.read_text(encoding="utf-8"), encoding="utf-8")

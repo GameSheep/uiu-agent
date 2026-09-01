@@ -10,11 +10,47 @@
 - 你的"人设"写在 `workspace/SOUL.md` 里——改它，agent 就变样。
 - 长记忆写在 `workspace/MEMORY.md`——对话里 `/memory <note>` 一键追加。
 - **完整 CLI**：配置模型、添加 skill、加 channel（目前支持 Telegram）、更新代码。
+- **可发布到 PyPI**：`uiu publish` 一行构建 + 上传，全世界 `pip install uiu`。
 
-## 安装
+## 安装（发布后）
+
+```bash
+pip install uiu        # 安装
+uiu init               # 首次初始化 workspace
+uiu                    # 开聊
+```
+
+或者不装全局，直接跑：
+```bash
+pipx run uiu
+```
+
+## 发布到 PyPI（作者用）
+
+1. 注册 [PyPI 账号](https://pypi.org/account/register/)
+2. 到 [API tokens](https://pypi.org/manage/account/token/) 建一个 token（scope 选 "Entire account"）
+3. 把 token 存环境变量：
+   ```powershell
+   $env:PYPI_TOKEN = "pypi-xxxxx"
+   ```
+4. 发布：
+   ```powershell
+   uiu publish              # 正式发布到 PyPI
+   uiu publish --test       # 先发 TestPyPI 试水
+   ```
+5. 验证：
+   ```powershell
+   pip install uiu
+   uiu version
+   ```
+
+> 发布前记得把 `pyproject.toml` 里的 `version` 升版本（每次发布必须比上次大）。
+> 发布后 1-2 分钟生效。
+
+## 安装（本地开发）
 
 ```powershell
-cd E:\Code\Personal\agent\uiu
+cd E:\Code\Personal\agent\my-agent
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -e .
@@ -98,8 +134,18 @@ uiu channel remove tg-main
 
 ### `update`
 ```
-uiu update self                                  # 重装自己（pip install -e .）
+uiu update self                                  # git pull（如有 remote）+ 重装，幂等
+uiu update self --no-pull                        # 只重装，不拉远程
 uiu update skills                                # 同步默认 skills 到 workspace
+```
+
+**更新流程（推荐）：** 改完代码 → `git add -A && git commit -m "..."` → `uiu update self`。
+git 本身就是回滚手段（`git log` / `git revert`），update 永不碰你的 workspace 人设。
+
+### `publish`
+```
+uiu publish                          # 构建 + 上传到 PyPI（需要 PYPI_TOKEN）
+uiu publish --test                   # 构建 + 上传到 TestPyPI 试水
 ```
 
 ### `version`

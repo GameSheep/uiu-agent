@@ -488,3 +488,50 @@ def cmd_version(args) -> int:
     from . import __version__
     print(f"uiu {__version__}")
     return 0
+
+
+# ---------- publish ----------
+
+def cmd_publish(args) -> int:
+    """Build wheel + sdist and upload to PyPI (or TestPyPI with --test)."""
+    token = args.token or os.environ.get("PYPI_TOKEN") or os.environ.get("TWINE_PASSWORD")
+    if not token:
+        _print_err("no PyPI token. Set PYPI_TOKEN env var or pass --token <token>.")
+        print("  create one at https://pypi.org/manage/account/token/")
+        return 2
+
+    # 1. build
+    print("· building sdist + wheel…")
+    rc = subprocess.run(
+        [sys.executable, "-m", "pip", "install", "--quiet", "build"],
+        check=False,
+    )
+    if rc.returncode != 0:
+        _print_err("pip install build failed")
+        return 1
+    rc = subprocess.run([sys.executable, "-m", "build", "--sdist", "--wheel"], check=False)
+    if rc.returncode != 0:
+        _print_err("build failed — fix errors above, then retry")
+        return 1
+
+    # 2. upload
+    if args.test:
+        repo = "https://test.pypi.org/legacy/"
+        print(f"· uploading to TestPyPI…")
+    else:
+        repo = "https://upload.pypi.org/legacy/"
+        print(f"· uploading to PyPI…")
+    rc = subprocess.run(
+        [sys.executable, "-m", "twine", "upload", "--repository-url", repo, "dist/*", "--non-interactive"],
+        env={**os.environ, "TWINE_USERNAME": "__token__", "TWINE_PASSWORD": token},
+        check=False,
+    )
+    if rc.returncode != 0:
+        _print_err("upload failed — fix errors above, then retry")
+        return 1
+
+    if args.test:
+        print("  done! try: pip install --index-url https://test.pypi.org/simple/ uiu")
+    else:
+        print("  done! try: pip install uiu   or   pipx run uiu")
+    return 0

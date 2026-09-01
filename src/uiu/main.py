@@ -102,6 +102,11 @@ def _build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("version", help="print version")
 
+    # publish
+    pp = sub.add_parser("publish", help="build & upload to PyPI")
+    pp.add_argument("--test", action="store_true", help="publish to TestPyPI (dry run for real PyPI)")
+    pp.add_argument("--token", help="PyPI API token (or set env PYPI_TOKEN)")
+
     return p
 
 
@@ -139,7 +144,7 @@ def _run_tui(args, parser: argparse.ArgumentParser) -> int:
 def _dispatch(args, parser: argparse.ArgumentParser) -> int:
     from .commands import (
         cmd_channel, cmd_config, cmd_init, cmd_model, cmd_show,
-        cmd_update, cmd_version, cmd_skills,
+        cmd_update, cmd_version, cmd_skills, cmd_publish,
     )
 
     if args.version or args.cmd == "version":
@@ -153,6 +158,7 @@ def _dispatch(args, parser: argparse.ArgumentParser) -> int:
         "skills": cmd_skills,
         "channel": cmd_channel,
         "update": cmd_update,
+        "publish": cmd_publish,
     }
     handler = handlers.get(args.cmd)
     if handler is None:

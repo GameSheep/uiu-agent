@@ -130,13 +130,31 @@ uiu config --unset-secret TELEGRAM_BOT_TOKEN
 ```
 
 ### `skills`
-管理 skill：
 ```
 uiu skills list                                  # 列出已加载 skill
+uiu skills search <query>                        # 在 GitHub 搜 skill
+uiu skills inspect <owner/repo | url>            # 预览不安装
+uiu skills install <owner/repo | github-url>     # 安装（装完即用）
+uiu skills install <...> --force                 # 覆盖已存在
 uiu skills add my_skill                          # 按模板新建
 uiu skills edit my_skill                         # 用 $EDITOR 打开
+uiu skills reload                                # 重载磁盘上的 skills
 uiu skills path                                  # 打印 skills 目录
 ```
+
+**安装 skill（从 GitHub）：**
+```bash
+# 从知名 skill 仓库装（比如 openai/skills）
+uiu skills install openai/skills
+uiu skills install https://github.com/openai/skills
+
+# 装特定子目录的技能
+uiu skills install https://github.com/owner/repo/tree/main/skills/foo
+
+# 直接装一个 SKILL.md URL
+uiu skills install https://raw.githubusercontent.com/.../SKILL.md
+```
+安装到 `workspace/skills/<name>/`，重启 uiu（或 `/skills reload`）立即生效，agent 马上能用。
 
 ### `channel`
 管理外部渠道（Hermes 平台 adapter 风格）。内置 adapter：**telegram / feishu(飞书) / wecom(企业微信) / dingtalk(钉钉) / discord / slack**。

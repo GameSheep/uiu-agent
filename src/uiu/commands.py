@@ -350,6 +350,54 @@ def cmd_config(args) -> int:
 def cmd_skills(args) -> int:
     ws = _workspace(args)
     skills_dir = ws / "skills"
+    skills_dir.mkdir(parents=True, exist_ok=True)
+
+    if args.action == "install":
+        from .skill_installer import install_skill
+        print(install_skill(args.identifier, skills_dir, name_override=args.name, force=args.force))
+        return 0
+
+    if args.action == "search":
+        from .skill_installer import search_skills
+        print(search_skills(args.query, limit=args.limit))
+        return 0
+
+    if args.action == "inspect":
+        from .skill_installer import parse_identifier, find_skill_files, _http_get
+        parsed = parse_identifier(args.identifier)
+        if parsed["kind"] == "unknown":
+            _print_err(f"无法识别: {args.identifier}")
+            return 2
+        files = find_skill_files(parsed)
+        if not files or files[0].startswith("error:"):
+            _print_err(files[0] if files else "未找到 SKILL.md")
+            return 2
+        for f in files[:3]:
+            try:
+                if f.startswith("http"):
+                    content = _http_get(f).decode("utf-8")
+                else:
+                    owner, repo, branch = parsed["owner"], parsed["repo"], parsed["branch"]
+                    url = f"https://raw.githubusercontent.com/{owner}/{repo}/{branch}/{f}"
+                    content = _http_get(url).decode("utf-8")
+                print(f"=== {f} ===")
+                print(content[:800])
+                print("…" if len(content) > 800 else "")
+            except Exception as e:
+                _print_err(f"获取失败: {e}")
+        print("\n安装: uiu skills install", args.identifier)
+        return 0
+
+    if args.action == "reload":
+        # clear in-memory skill cache so next load picks up disk changes
+        try:
+            import uiu.workspace as ws_mod
+            # no cache to clear — skills are loaded fresh on each load_workspace call
+            pass
+        except Exception:
+            pass
+        print("[ok] skills 已重新加载（下次对话生效）")
+        return 0
 
     if args.action == "list":
         if not skills_dir.is_dir():

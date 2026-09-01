@@ -68,13 +68,23 @@ def _build_parser() -> argparse.ArgumentParser:
     pc.add_argument("--show-values", action="store_true", help="don't redact values when --list")
 
     # skills
-    psk = sub.add_parser("skills", help="manage skills")
+    psk = sub.add_parser("skills", help="search, install, and manage skills")
     psk_sub = psk.add_subparsers(dest="action", metavar="<action>", required=True)
     psk_sub.add_parser("list", help="list installed skills")
+    psk_install = psk_sub.add_parser("install", help="install a skill from GitHub repo or URL")
+    psk_install.add_argument("identifier", help="owner/repo | GitHub URL | raw SKILL.md URL")
+    psk_install.add_argument("--name", default="", help="override skill name")
+    psk_install.add_argument("--force", action="store_true", help="overwrite if exists")
+    psk_search = psk_sub.add_parser("search", help="search GitHub for skills")
+    psk_search.add_argument("query")
+    psk_search.add_argument("--limit", type=int, default=10)
+    psk_inspect = psk_sub.add_parser("inspect", help="preview a skill without installing")
+    psk_inspect.add_argument("identifier")
     psk_ask = psk_sub.add_parser("add", help="create a new skill from template")
     psk_ask.add_argument("name", help="skill name (will be the directory name)")
     psk_edit = psk_sub.add_parser("edit", help="open SKILL.md in $EDITOR")
     psk_edit.add_argument("name")
+    psk_sub.add_parser("reload", help="reload skills from disk (after installing)")
     psk_sub.add_parser("path", help="print skills directory path")
 
     # channel

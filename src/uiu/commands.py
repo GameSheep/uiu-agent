@@ -455,9 +455,17 @@ def cmd_channel(args) -> int:
                 print(f"  next: uiu config --set-secret {secret_env}=<token>")
         elif ctype == "feishu":
             print("  飞书配置: uiu channel add 需带 -o app_id=... -o app_secret=...")
-            print("          或编辑 config.yaml 的 channels[].options")
         elif ctype == "wecom":
             print("  企微配置: uiu channel add 需带 -o corpid=... -o corpsecret=... -o agentid=...")
+        elif ctype == "dingtalk":
+            print("  钉钉配置: uiu channel add 需带 -o client_id=... -o client_secret=...")
+            print("          钉钉开放平台创建机器人，开 Stream 模式")
+        elif ctype == "discord":
+            if not os.environ.get(secret_env) and not parse_env_file(ws / ".env").get(secret_env):
+                print(f"  next: uiu config --set-secret {secret_env}=<token>")
+        elif ctype == "slack":
+            print("  Slack: uiu config --set-secret SLACK_BOT_TOKEN=xoxb-...")
+            print("         并 uiu channel add 带 -o app_token=xapp-...")
         print("  启用: uiu channel enable", name)
         print("  启动网关: uiu serve")
         return 0
@@ -505,6 +513,7 @@ def _default_secret_env(ctype: str) -> str:
         "telegram": "TELEGRAM_BOT_TOKEN",
         "feishu": "FEISHU_APP_SECRET",
         "wecom": "WECOM_CORP_SECRET",
+        "dingtalk": "DINGTALK_CLIENT_SECRET",
         "discord": "DISCORD_BOT_TOKEN",
         "slack": "SLACK_BOT_TOKEN",
         "whatsapp": "WHATSAPP_TOKEN",

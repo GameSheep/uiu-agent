@@ -122,23 +122,39 @@ uiu skills path                                  # 打印 skills 目录
 ```
 
 ### `channel`
-管理外部渠道（Hermes 平台 adapter 风格）。内置 adapter：**telegram / feishu(飞书) / wecom(企业微信)**。
+管理外部渠道（Hermes 平台 adapter 风格）。内置 adapter：**telegram / feishu(飞书) / wecom(企业微信) / dingtalk(钉钉) / discord / slack**。
 
-**Telegram：**
+**Telegram / Discord**（长连接，无需公网）：
 ```
 uiu channel add tg-main --type telegram
 uiu config --set-secret TELEGRAM_BOT_TOKEN=<BotFather 给的 token>
 uiu channel test tg-main                         # 调 getMe 验证
+
+uiu channel add dc-main --type discord
+uiu config --set-secret DISCORD_BOT_TOKEN=<Discord Developer Portal token>
 ```
 
-**飞书：**
+**钉钉**（Stream 模式长连接，无需公网）：
+```
+uiu channel add dt-main --type dingtalk \
+  -o client_id=dingxxx -o client_secret=xxx
+uiu channel test dt-main
+```
+
+**Slack**（Socket Mode 长连接，无需公网）：
+```
+uiu channel add sl-main --type slack -o app_token=xapp-...
+uiu config --set-secret SLACK_BOT_TOKEN=xoxb-...
+```
+
+**飞书**（webhook，需公网回调）：
 ```
 uiu channel add fs-main --type feishu \
   -o app_id=cli_xxx -o app_secret=xxx [-o verify_token=xxx]
 uiu channel test fs-main
 ```
 
-**企业微信：**
+**企业微信**（webhook，需公网回调）：
 ```
 uiu channel add wc-main --type wecom \
   -o corpid=wwxxx -o corpsecret=xxx -o agentid=1000002

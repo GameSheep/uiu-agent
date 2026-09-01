@@ -144,9 +144,15 @@ def _ensure_discovered() -> None:
     from .channels_telegram import TelegramAdapter
     from .channels_feishu import FeishuAdapter
     from .channels_wecom import WeComAdapter
+    from .channels_dingtalk import DingTalkAdapter
+    from .channels_discord import DiscordAdapter
+    from .channels_slack import SlackAdapter
     register_channel_adapter(TelegramAdapter)
     register_channel_adapter(FeishuAdapter)
     register_channel_adapter(WeComAdapter)
+    register_channel_adapter(DingTalkAdapter)
+    register_channel_adapter(DiscordAdapter)
+    register_channel_adapter(SlackAdapter)
     # user plugins (last-writer-wins)
     user_dir = _user_channels_dir()
     if user_dir is not None:
@@ -161,9 +167,6 @@ def _ensure_discovered() -> None:
 
 def check_channel(c: "ChannelConfig") -> tuple[bool, str]:
     """Verify a channel's credentials (Hermes: adapter.check)."""
-    token = c.resolved_token()
-    if not token and c.type not in ("wecom", "feishu"):
-        return False, f"{c.secret_env} not set"
     cls = get_adapter(c.type)
     if cls is None:
         return False, f"unknown channel type: {c.type} (supported: {', '.join(list_adapters())})"

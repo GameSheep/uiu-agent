@@ -32,6 +32,8 @@ dependencies = [
     "pillow>=10.0.0",
     # windows desktop control (window switching, hotkeys)
     "pywin32>=306; sys_platform == 'win32'",
+    # spreadsheet reading
+    "openpyxl>=3.1.0",
 ]
 
 [project.urls]

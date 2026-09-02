@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import re
 import time
+from pathlib import Path
 
 
 # ---------- windows (pywin32) ----------
@@ -265,6 +266,87 @@ def _foreground_hwnd():
     return win32gui.GetForegroundWindow()
 
 
+# ---------- scroll (for long lists / chat history) ----------
+
+def scroll(direction: str = "down", amount: int = 3) -> str:
+    """Scroll the current window. direction: down/up, amount: 滚轮格数.
+
+    微信聊天记录、长列表、网页长页面的核心工具。多滚几次看更多内容。
+    """
+    import pyautogui
+    direction = direction.lower()
+    clicks = max(1, min(amount, 20))
+    if direction in ("down", "下"):
+        pyautogui.scroll(-clicks)
+    elif direction in ("up", "上"):
+        pyautogui.scroll(clicks)
+    else:
+        return f"[error] 方向: down/up"
+    return f"[ok] 已向下滚动 {clicks} 格" if direction in ("down", "下") else f"[ok] 已向上滚动 {clicks} 格"
+
+
+def open_app(app_name: str) -> str:
+    """Launch an app by name (uses Windows 'start' / search). E.g. '微信', 'excel', 'notepad'.
+
+    Tries: start <name> (shell), then common paths.
+    """
+    import subprocess
+    # try start command (uses Windows app search / file association)
+    for cmd in (
+        ["cmd", "/c", "start", "", app_name],
+        ["cmd", "/c", "start", app_name],
+    ):
+        try:
+            r = subprocess.run(cmd, capture_output=True, timeout=15)
+            if r.returncode == 0:
+                return f"[ok] 已启动 {app_name}（等 1-2 秒窗口出现）"
+        except Exception:
+            continue
+    return f"[error] 无法启动 {app_name}（可尝试 shell_exec 用完整路径）"
+
+
+def _desktop_path() -> Path:
+    """Resolve the real Desktop path (handles OneDrive redirection)."""
+    # 1. try registry (shell folders)
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders") as k:
+            val, _ = winreg.QueryValueEx(k, "Desktop")
+            p = Path(val)
+            if p.is_dir():
+                return p
+    except Exception:
+        pass
+    # 2. fallback: common locations
+    home = Path.home()
+    for cand in (home / "Desktop", home / "桌面", home / "OneDrive" / "Desktop", home / "OneDrive" / "桌面"):
+        if cand.is_dir():
+            return cand
+    return home
+
+
+def list_files(path: str = "") -> str:
+    """List files in a directory (default: Desktop). Useful to find files like excel."""
+    import os
+    if not path:
+        path = str(_desktop_path())
+    p = Path(path)
+    if not p.is_dir():
+        return f"[error] 目录不存在: {path}"
+    items = []
+    for entry in sorted(p.iterdir()):
+        kind = "📁" if entry.is_dir() else "📄"
+        try:
+            size = entry.stat().st_size if entry.is_file() else 0
+            size_s = f" {size//1024}KB" if size > 1024 else ""
+        except Exception:
+            size_s = ""
+        items.append(f"  {kind} {entry.name}{size_s}")
+    if not items:
+        return f"({path} 是空的)"
+    return f"{path}:\n" + "\n".join(items[:40])
+
+
 # ---------- tool definitions ----------
 
 LIST_WINDOWS_DEF = {
@@ -352,6 +434,46 @@ FOCUS_INPUT_DEF = {
     },
 }
 
+SCROLL_DEF = {
+    "type": "function",
+    "function": {
+        "name": "scroll",
+        "description": "滚动当前窗口（滚轮）。微信聊天记录、长列表、网页长页面必用。要连续看更多内容就多滚几次。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "direction": {"type": "string", "enum": ["down", "up"], "description": "向下/向上滚动"},
+                "amount": {"type": "integer", "description": "滚轮格数（默认3，最多20）"},
+            },
+        },
+    },
+}
+
+OPEN_APP_DEF = {
+    "type": "function",
+    "function": {
+        "name": "open_app",
+        "description": "启动应用/程序（按名字，如'微信'、'notepad'、'excel'）。窗口还没打开时用。",
+        "parameters": {
+            "type": "object",
+            "properties": {"app_name": {"type": "string"}},
+            "required": ["app_name"],
+        },
+    },
+}
+
+LIST_FILES_DEF = {
+    "type": "function",
+    "function": {
+        "name": "list_files",
+        "description": "列出目录里的文件（默认桌面）。找文件（如 excel、文档）时用。",
+        "parameters": {
+            "type": "object",
+            "properties": {"path": {"type": "string", "description": "目录路径，默认桌面"}},
+        },
+    },
+}
+
 
 DESKTOP_TOOLS: dict[str, dict] = {
     "list_windows": {"def": LIST_WINDOWS_DEF, "fn": list_windows},
@@ -361,6 +483,9 @@ DESKTOP_TOOLS: dict[str, dict] = {
     "taskbar_click": {"def": TASKBAR_CLICK_DEF, "fn": taskbar_click},
     "get_foreground_window": {"def": GET_FOREGROUND_DEF, "fn": get_foreground_window},
     "focus_input": {"def": FOCUS_INPUT_DEF, "fn": focus_input},
+    "scroll": {"def": SCROLL_DEF, "fn": scroll},
+    "open_app": {"def": OPEN_APP_DEF, "fn": open_app},
+    "list_files": {"def": LIST_FILES_DEF, "fn": list_files},
 }
 
 

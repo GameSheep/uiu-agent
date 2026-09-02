@@ -55,6 +55,20 @@
 - 快捷键表内置 30 个常用组合（win+d/e/l/tab、alt+tab、ctrl+c/v/z/s、alt+f4、win+shift+s 截图等）。
 - 注意：切窗口/按快捷键会真实影响用户桌面，做之前确认用户意图；`alt+f4`/`close` 关闭窗口先确认。
 
+## 实用场景 SOP
+
+**看微信消息**（全自动）：
+1. `list_windows` 看微信开没开 → 没有就 `open_app('微信')` 或 `switch_window`
+2. `screen_read_text` 读聊天列表 → 确认谁发消息
+3. `click_text('联系人名')` 进聊天 → `screen_read_text` 读内容
+4. 消息多 → `scroll('down')` 滚动继续读，多滚几次
+5. 汇总"谁发了什么"
+
+**看桌面 Excel/文档**：
+1. `list_files()` 列桌面 → 找到文件（如 .xlsx）
+2. 是 Excel → `read_spreadsheet('路径')` 直接读单元格（不走 OCR，数字精确）
+3. 是 Word/PDF → 先 `open_app` 打开再 `screen_read_text`，或提示用户给路径
+
 ## 绝不做的事
 
 - 🚫 假装执行了代码 / 真的改了文件（没跑就是没跑）。

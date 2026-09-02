@@ -116,6 +116,55 @@ def tool_write_file(path: str, content: str) -> str:
         return f"[error] {type(e).__name__}: {e}"
 
 
+# ----- built-in tool: read_spreadsheet (xlsx) -----
+
+TOOL_SPREADSHEET_DEF = {
+    "type": "function",
+    "function": {
+        "name": "read_spreadsheet",
+        "description": "读取 Excel (.xlsx) 文件内容，直接解析文件不走屏幕 OCR，准确。返回单元格数据表格。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "xlsx 文件路径"},
+                "max_rows": {"type": "integer", "description": "最多读多少行（默认50）"},
+            },
+            "required": ["path"],
+        },
+    },
+}
+
+
+def tool_read_spreadsheet(path: str, max_rows: int = 50) -> str:
+    p = Path(path).expanduser()
+    if not p.is_absolute():
+        p = Path.cwd() / p
+    if not p.exists():
+        return f"[error] 文件不存在: {p}"
+    try:
+        import openpyxl
+    except ImportError:
+        return "[error] 需要 openpyxl: pip install openpyxl"
+    try:
+        wb = openpyxl.load_workbook(p, read_only=True, data_only=True)
+    except Exception as e:
+        return f"[error] 打开失败: {type(e).__name__}: {e}"
+    lines = []
+    for ws in wb.worksheets:
+        lines.append(f"=== 工作表: {ws.title} (max_row={ws.max_row}) ===")
+        for i, row in enumerate(ws.iter_rows(max_row=max_rows, values_only=True), 1):
+            cells = ["" if c is None else str(c) for c in row]
+            # trim trailing empties
+            while cells and cells[-1] == "":
+                cells.pop()
+            if cells:
+                lines.append(f"  第{i}行: {' | '.join(cells)}")
+        if ws.max_row and ws.max_row > max_rows:
+            lines.append(f"  …（共 {ws.max_row} 行，只显示前 {max_rows} 行）")
+    wb.close()
+    return "\n".join(lines) if lines else "(空文件)"
+
+
 # ----- registry -----
 
 from .learning import LEARNING_TOOLS, learning_tool_defs, call_learning_tool
@@ -126,6 +175,7 @@ BUILTIN_TOOLS: dict[str, dict] = {
     "shell_exec": {"def": TOOL_SHELL_DEF, "fn": tool_shell_exec},
     "read_file": {"def": TOOL_READ_DEF, "fn": tool_read_file},
     "write_file": {"def": TOOL_WRITE_DEF, "fn": tool_write_file},
+    "read_spreadsheet": {"def": TOOL_SPREADSHEET_DEF, "fn": tool_read_spreadsheet},
     **LEARNING_TOOLS,
     **SCREEN_TOOLS,
     **DESKTOP_TOOLS,

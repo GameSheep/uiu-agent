@@ -57,6 +57,36 @@
 
 **实测**：26 窗口枚举、切换微信、win+d 显示桌面全部在真实 Windows 上验证通过。
 
+## 系统管理（30 个工具全景）
+
+```
+"电脑卡不卡 / 内存多大 / 还有多少电"  → system_info
+"帮我关机 / 重启 / 睡眠"              → shutdown（需确认）
+"网通不通"                            → check_network
+"我复制了什么"                        → clipboard_get
+"打开哔哩哔哩 / 搜索今天的新闻"        → open_url
+"截个图"                              → take_screenshot
+```
+
+| 工具 | 干嘛 |
+|---|---|
+| `system_info` | CPU/内存/磁盘/电池/开机时长（实测：31GB 内存、97% 电量、3 磁盘） |
+| `shutdown` | 关机/重启/注销/睡眠（**必须先确认**） |
+| `check_network` | ping 测试（实测 baidu 34ms） |
+| `clipboard_get/set` | 读写剪贴板 |
+| `open_url` | 浏览器打开网址或搜索 |
+| `take_screenshot` | 截屏存桌面 |
+
+## 工具全景（30 个）
+
+| 类 | 工具 |
+|---|---|
+| 基础 | shell_exec / read_file / write_file / read_spreadsheet |
+| 自学习 | memory_add / recall / replace / skill_create / skill_improve |
+| 屏幕 | click_text / screen_read_text / type_text / press_key |
+| 桌面 | list_windows / switch_window / window_action / run_hotkey(30个) / taskbar_click / get_foreground_window / focus_input / scroll / open_app / list_files |
+| 系统 | system_info / shutdown / check_network / clipboard_get/set / open_url / take_screenshot |
+
 ## 自我学习（Hermes 对齐）
 
 agent 内建一套"learning loop"，跨会话累积知识：

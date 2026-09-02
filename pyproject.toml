@@ -34,6 +34,9 @@ dependencies = [
     "pywin32>=306; sys_platform == 'win32'",
     # spreadsheet reading
     "openpyxl>=3.1.0",
+    # system info / clipboard
+    "psutil>=5.9.0",
+    "pyperclip>=1.8.0",
 ]
 
 [project.urls]

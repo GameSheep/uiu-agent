@@ -98,16 +98,24 @@ def click_text(text: str, click_count: int = 1) -> str:
 def type_text(text: str, interval: float = 0.02) -> str:
     """Type text into the focused input (after click_text focuses it).
 
-    中文安全：走剪贴板粘贴（typewrite 打中文会乱码）。
+    中文安全：含中文走剪贴板粘贴；纯 ASCII 先确保英文输入法再 typewrite。
     """
     import pyautogui
-    if any("\u4e00" <= ch <= "\u9fff" for ch in text):
-        # contains CJK → clipboard paste
+    has_cjk = any("\u4e00" <= ch <= "\u9fff" for ch in text)
+    if has_cjk:
+        # contains CJK → clipboard paste (typewrite corrupts Chinese)
         try:
             from .system_tools import clipboard_set
             clipboard_set(text)
             pyautogui.hotkey("ctrl", "v")
             return f"[ok] 已输入 {len(text)} 字符（剪贴板）"
+        except Exception:
+            pass
+    else:
+        # ASCII → ensure English IME first (avoid "uiuagent" → "uiu阿根廷")
+        try:
+            from .ime_tools import ensure_english_ime
+            ensure_english_ime()
         except Exception:
             pass
     pyautogui.write(text, interval=interval)

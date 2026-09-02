@@ -35,11 +35,14 @@ def send_wechat(contact: str, message: str) -> str:
     if len(message) > 500:
         return "[error] 消息太长（最多 500 字）"
 
-    # 1. bring WeChat to front
+    # 1. bring WeChat to front + ensure English IME (ASCII hotkeys need it)
+    from .ime_tools import ensure_english_ime
     r = switch_window("微信")
     if r.startswith("[error]"):
         return r + "（微信没开？先 open_app('微信')）"
     time.sleep(0.6)
+    ensure_english_ime()  # ctrl+f / enter / typing need English mode
+    time.sleep(0.2)
 
     # 2. search contact via Ctrl+F (clipboard-paste Chinese name)
     pyautogui.press("esc")  # clear any stuck search

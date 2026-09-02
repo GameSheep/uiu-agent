@@ -172,6 +172,7 @@ from .screen_tools import SCREEN_TOOLS, screen_tool_defs, call_screen_tool
 from .desktop_tools import DESKTOP_TOOLS, desktop_tool_defs, call_desktop_tool
 from .system_tools import SYSTEM_TOOLS, system_tool_defs, call_system_tool
 from .wechat_tools import WECHAT_TOOLS, wechat_tool_defs, call_wechat_tool
+from .ime_tools import IME_TOOLS, ime_tool_defs, call_ime_tool
 
 BUILTIN_TOOLS: dict[str, dict] = {
     "shell_exec": {"def": TOOL_SHELL_DEF, "fn": tool_shell_exec},
@@ -183,6 +184,7 @@ BUILTIN_TOOLS: dict[str, dict] = {
     **DESKTOP_TOOLS,
     **SYSTEM_TOOLS,
     **WECHAT_TOOLS,
+    **IME_TOOLS,
 }
 
 

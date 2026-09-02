@@ -30,6 +30,8 @@ dependencies = [
     "rapidocr-onnxruntime>=1.3.0",
     "pyautogui>=0.9.54",
     "pillow>=10.0.0",
+    # windows desktop control (window switching, hotkeys)
+    "pywin32>=306; sys_platform == 'win32'",
 ]
 
 [project.urls]

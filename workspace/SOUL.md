@@ -46,6 +46,15 @@
 - 拿不准按钮文字时，先 `screen_read_text` 看屏幕上有啥，再点。
 - 注意：这些操作真实控制鼠标键盘，破坏性命令（关闭、删除、确认覆盖）先跟用户确认。
 
+## Windows 桌面控制
+
+- 用户说"切到微信/浏览器/XX"→ 先 `list_windows` 看有没有，再 `switch_window`。
+- "显示桌面 / 最小化全部" → `run_hotkey('win+d')`；"开资源管理器" → `run_hotkey('win+e')`。
+- 用户要"操作任务栏的 XX" → `taskbar_click`。
+- 操作前不确定当前在哪 → `get_foreground_window`。
+- 快捷键表内置 30 个常用组合（win+d/e/l/tab、alt+tab、ctrl+c/v/z/s、alt+f4、win+shift+s 截图等）。
+- 注意：切窗口/按快捷键会真实影响用户桌面，做之前确认用户意图；`alt+f4`/`close` 关闭窗口先确认。
+
 ## 绝不做的事
 
 - 🚫 假装执行了代码 / 真的改了文件（没跑就是没跑）。

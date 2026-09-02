@@ -33,6 +33,30 @@
 | `type_text` | 在当前输入框输入文字 |
 | `press_key` | 按键/组合键（enter、ctrl+s） |
 
+## Windows 桌面控制（CLI 里远程操作桌面）
+
+```
+"切到微信"                 → agent: list_windows + switch_window
+"显示桌面"                 → agent: run_hotkey('win+d')
+"打开资源管理器"           → agent: run_hotkey('win+e')
+"点任务栏的 Chrome"        → agent: taskbar_click
+"现在开着什么窗口？"        → agent: list_windows
+"最小化 VS Code"           → agent: window_action('code', 'minimize')
+```
+
+工具：
+| 工具 | 干嘛 |
+|---|---|
+| `list_windows` | 列出所有打开窗口（26 个实测可列） |
+| `switch_window` | 按标题切换窗口（前台激活，实测切到微信成功） |
+| `window_action` | 最小化/最大化/还原/关闭窗口 |
+| `run_hotkey` | 执行系统快捷键（内置 30 个：win+d/e/l、alt+tab、alt+f4、win+shift+s…） |
+| `taskbar_click` | 点任务栏程序图标（OCR 定位） |
+| `get_foreground_window` | 当前前台窗口标题 |
+| `focus_input` | 点击前台窗口中心获得输入焦点 |
+
+**实测**：26 窗口枚举、切换微信、win+d 显示桌面全部在真实 Windows 上验证通过。
+
 ## 自我学习（Hermes 对齐）
 
 agent 内建一套"learning loop"，跨会话累积知识：

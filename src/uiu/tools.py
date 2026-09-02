@@ -120,6 +120,7 @@ def tool_write_file(path: str, content: str) -> str:
 
 from .learning import LEARNING_TOOLS, learning_tool_defs, call_learning_tool
 from .screen_tools import SCREEN_TOOLS, screen_tool_defs, call_screen_tool
+from .desktop_tools import DESKTOP_TOOLS, desktop_tool_defs, call_desktop_tool
 
 BUILTIN_TOOLS: dict[str, dict] = {
     "shell_exec": {"def": TOOL_SHELL_DEF, "fn": tool_shell_exec},
@@ -127,6 +128,7 @@ BUILTIN_TOOLS: dict[str, dict] = {
     "write_file": {"def": TOOL_WRITE_DEF, "fn": tool_write_file},
     **LEARNING_TOOLS,
     **SCREEN_TOOLS,
+    **DESKTOP_TOOLS,
 }
 
 

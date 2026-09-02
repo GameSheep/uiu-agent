@@ -96,8 +96,20 @@ def click_text(text: str, click_count: int = 1) -> str:
 
 
 def type_text(text: str, interval: float = 0.02) -> str:
-    """Type text into the focused input (after click_text focuses it)."""
+    """Type text into the focused input (after click_text focuses it).
+
+    中文安全：走剪贴板粘贴（typewrite 打中文会乱码）。
+    """
     import pyautogui
+    if any("\u4e00" <= ch <= "\u9fff" for ch in text):
+        # contains CJK → clipboard paste
+        try:
+            from .system_tools import clipboard_set
+            clipboard_set(text)
+            pyautogui.hotkey("ctrl", "v")
+            return f"[ok] 已输入 {len(text)} 字符（剪贴板）"
+        except Exception:
+            pass
     pyautogui.write(text, interval=interval)
     return f"[ok] 已输入 {len(text)} 字符"
 

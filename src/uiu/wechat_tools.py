@@ -1,13 +1,15 @@
 """WeChat sender — send messages to a WeChat contact (UI automation).
 
-微信没有官方 API，只能模拟 UI 操作。链路：
+微信没有官方 API，只能模拟 UI 操作。链路（中文安全版）：
 1. switch 到微信窗口
-2. 在聊天列表 OCR 找联系人 → 点击进入
-3. 用窗口几何定位输入框（微信聊天窗口底部是输入区，固定布局）
-4. 点击输入框 → type_text 输入 → 按 Enter 发送
+2. Ctrl+F 搜索联系人（剪贴板粘贴中文）→ Enter 进聊天
+3. 剪贴板粘贴消息 → Enter 发送
+
+为什么用剪贴板：pyautogui.typewrite 打中文会乱码（实测"文件传输助手"变"zuu阿里延"），
+中文必须走 clipboard_set + Ctrl+V。
 
 风险说明：
-- 依赖微信 PC 版 UI 布局（底部输入框），微信改版可能失效
+- 依赖微信 PC 版 UI，微信改版可能失效
 - 只支持文本消息
 - 发送是真实操作，不可撤回——调用前必须确认内容
 """
@@ -18,16 +20,16 @@ import time
 
 
 def send_wechat(contact: str, message: str) -> str:
-    """Send a text message to a WeChat contact.
+    """Send a text message to a WeChat contact (clipboard-paste, Chinese-safe).
 
-    contact: 联系人名字（聊天列表里可见的）
+    contact: 联系人名字
     message: 要发送的文本
     """
     import pyautogui
-    from .desktop_tools import switch_window, list_windows, get_foreground_window, _desktop_path
-    from .screen_tools import _screenshot, _ocr_image, _find
+    from .desktop_tools import switch_window
+    from .system_tools import clipboard_set
 
-    # 0. safety: message must be non-empty and short-ish
+    # 0. safety checks
     if not message.strip():
         return "[error] 消息不能为空"
     if len(message) > 500:
@@ -39,45 +41,30 @@ def send_wechat(contact: str, message: str) -> str:
         return r + "（微信没开？先 open_app('微信')）"
     time.sleep(0.6)
 
-    # 2. find contact in the chat list (left panel) and click it
-    path = _screenshot()
-    items = _ocr_image(path)
-    matches = _find(items, contact)
-    if not matches:
-        # maybe need to scroll the list / search
-        cands = [i["text"] for i in items if len(i["text"]) <= 12][:10]
-        return f"[error] 聊天列表没找到 '{contact}'。可见的: {cands}"
-
-    # click the contact (prefer one in left panel: x < 400)
-    left_matches = [m for m in matches if m["x"] < 400]
-    target = (left_matches or matches)[0]
-    cx, cy = int(target["cx"]), int(target["cy"])
-    pyautogui.moveTo(cx, cy, duration=0.15)
-    pyautogui.click()
-    time.sleep(0.5)
-
-    # 3. locate input box via window geometry.
-    #    WeChat chat input is at the bottom of the chat area, ~50px above the
-    #    bottom of the message panel. We use the window rect of WeChat.
-    hwnd = _wechat_hwnd()
-    if hwnd is None:
-        return "[error] 找不到微信窗口（可能被最小化）"
-    win32gui, _, _ = _wechat_win32()
-    rect = win32gui.GetWindowRect(hwnd)
-    # input box: near bottom of window, roughly 1/2 to 2/3 width
-    win_w = rect[2] - rect[0]
-    win_h = rect[3] - rect[1]
-    input_x = rect[0] + int(win_w * 0.5)
-    input_y = rect[3] - int(win_h * 0.12)  # bottom ~12%
-    pyautogui.moveTo(input_x, input_y, duration=0.15)
-    pyautogui.click()
-    time.sleep(0.3)
-
-    # 4. type + send
-    pyautogui.typewrite(message, interval=0.005)
+    # 2. search contact via Ctrl+F (clipboard-paste Chinese name)
+    pyautogui.press("esc")  # clear any stuck search
     time.sleep(0.2)
-    pyautogui.press("enter")
+    pyautogui.hotkey("ctrl", "f")
+    time.sleep(0.5)
+    clipboard_set(contact)
+    pyautogui.hotkey("ctrl", "v")
+    time.sleep(0.8)
+
+    # check search results exist before pressing enter
+    from .screen_tools import _screenshot, _ocr_image
+    items = _ocr_image(_screenshot())
+    if contact not in " ".join(i["text"] for i in items):
+        return f"[error] 搜索没找到 '{contact}'（检查名字是否正确）"
+
+    pyautogui.press("enter")  # open first result
+    time.sleep(1.0)
+
+    # 3. paste message into input box and send
+    clipboard_set(message)
+    pyautogui.hotkey("ctrl", "v")
     time.sleep(0.3)
+    pyautogui.press("enter")
+    time.sleep(0.4)
 
     return f"[ok] 已给 {contact} 发送: {message[:40]}{'…' if len(message) > 40 else ''}"
 

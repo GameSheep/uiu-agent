@@ -25,14 +25,14 @@ from .workspace import Workspace
 
 
 def _ws() -> Workspace | None:
-    """Find the active workspace (env var > cwd/workspace)."""
+    """Find the active workspace (env > cwd/workspace > ~/workspace > ~/.uiu/workspace)."""
     import os
     env = os.environ.get("UIU_WORKSPACE")
     if env:
         return Workspace(root=Path(env).expanduser())
-    cwd_ws = Path.cwd() / "workspace"
-    if cwd_ws.exists():
-        return Workspace(root=cwd_ws)
+    for cand in (Path.cwd() / "workspace", Path.home() / "workspace", Path.home() / ".uiu" / "workspace"):
+        if cand.is_dir():
+            return Workspace(root=cand)
     return None
 
 
@@ -129,26 +129,66 @@ def skill_create(name: str, description: str, instructions: str = "") -> str:
 
 
 def skill_improve(name: str, note: str = "") -> str:
-    """Improve an existing skill by appending a usage note (Hermes self-improve)."""
+    """Improve an existing skill by appending a usage note (Hermes self-improve).
+
+    Core skills are NOT modified — improvements go to workspace/skills/_ext/.
+    User skills and ext skills are modified directly.
+    """
+    import re as _re
+
     skills_dir = _skills_dir()
-    target = skills_dir / name / "SKILL.md"
-    if not target.exists():
-        # try fuzzy match
-        for d in skills_dir.iterdir():
-            if d.is_dir() and name.lower() in d.name.lower():
-                target = d / "SKILL.md"
-                break
-    if not target.exists():
-        return f"[error] 技能不存在: {name}"
-    text = target.read_text(encoding="utf-8")
+    safe = _re.sub(r"[^a-z0-9_-]", "_", name.lower()).strip("_")
+
+    # 1. Check user skills (workspace/skills/<name>/)
+    user_target = skills_dir / safe / "SKILL.md"
+    if user_target.exists():
+        _append_usage_note(user_target, note)
+        return f"[ok] 已改进技能 {safe}（用户技能）"
+
+    # 2. Check ext skills (workspace/skills/_ext/<name>/)
+    ext_target = skills_dir / "_ext" / safe / "SKILL.md"
+    if ext_target.exists():
+        _append_usage_note(ext_target, note)
+        return f"[ok] 已改进技能 {safe}（ext 层）"
+
+    # 3. Check core skills — if found, create ext override
+    core_skills_dir = Path(__file__).parent / "_default_skills"
+    core_target = core_skills_dir / safe / "SKILL.md"
+    if core_target.exists():
+        # Create ext override with usage note
+        ext_dir = skills_dir / "_ext" / safe
+        ext_dir.mkdir(parents=True, exist_ok=True)
+        ext_file = ext_dir / "SKILL.md"
+        core_text = core_target.read_text(encoding="utf-8")
+        ts = time.strftime("%Y-%m-%d")
+        note_line = f"- [{ts}] {note.strip()}" if note.strip() else f"- [{ts}] (使用改进)"
+        # Add usage note to the ext override
+        if "## 使用记录" not in core_text:
+            ext_text = core_text + f"\n## 使用记录\n{note_line}\n"
+        else:
+            ext_text = core_text.replace("## 使用记录", f"## 使用记录\n{note_line}", 1)
+        ext_file.write_text(ext_text, encoding="utf-8")
+        return f"[ok] 已改进技能 {safe}（core → ext 层，core 未修改）"
+
+    # 4. Fuzzy match
+    for d in skills_dir.iterdir():
+        if d.is_dir() and safe in d.name.lower():
+            _append_usage_note(d / "SKILL.md", note)
+            return f"[ok] 已改进技能 {d.name}（模糊匹配）"
+
+    return f"[error] 技能不存在: {name}"
+
+
+def _append_usage_note(path: Path, note: str) -> None:
+    """Append a usage note to a skill file."""
+    text = path.read_text(encoding="utf-8")
     ts = time.strftime("%Y-%m-%d")
     note_line = f"- [{ts}] {note.strip()}" if note.strip() else f"- [{ts}] (使用改进)"
     if "## 使用记录" not in text:
         text += f"\n## 使用记录\n{note_line}\n"
     else:
         text = text.replace("## 使用记录", f"## 使用记录\n{note_line}", 1)
-    target.write_text(text, encoding="utf-8")
-    return f"[ok] 已改进技能 {name}"
+    path.write_text(text, encoding="utf-8")
 
 
 # ---------- tool definitions (OpenAI function schema) ----------

@@ -1,0 +1,27 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install (core + test extras)
+        run: pip install -e ".[test]"
+
+      - name: Byte-compile all sources
+        run: python -m compileall -q src
+
+      - name: Unit tests (no LLM / network)
+        run: python -m pytest tests/ -q
+
+      - name: CLI smoke (22 cases, isolated workspace)
+        run: python cli_smoke.py

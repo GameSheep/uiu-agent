@@ -23,3 +23,20 @@ cli_smoke.py
 result.txt
 smoke.txt
 _test_workspace/
+
+# one-off debug / probe scripts (Windows-only, manual, never commit)
+check_*.py
+debug_*.py
+probe_*.py
+list_wins.py
+ui_layout.py
+verify.py
+# live-fire manual script (sends real WeChat messages) — never commit/run in CI
+test_send.py
+
+# debug artifacts (screenshots, OCR dumps, window lists)
+*.png
+*_out.txt
+windows_list.txt
+send_result.txt
+wx_debug.txt

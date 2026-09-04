@@ -115,17 +115,21 @@ def clipboard_get() -> str:
 
 def clipboard_set(text: str) -> str:
     """Write text to clipboard."""
+    if len(text) > 100_000:
+        return "[error] 文本过长（>100KB）"
     try:
         import pyperclip
         pyperclip.copy(text)
         return f"[ok] 已复制到剪贴板（{len(text)} 字符）"
     except ImportError:
         import subprocess
+        # stdin 管道，避免把 text 拼进命令行（命令注入）
         r = subprocess.run(
-            ["powershell", "-command", f"Set-Clipboard -Value {chr(34)}{text}{chr(34)}"],
-            capture_output=True, timeout=10,
+            ["powershell", "-NoProfile", "-command", "Set-Clipboard -Value ([Console]::In.ReadToEnd())"],
+            input=text,
+            capture_output=True, text=True, timeout=10,
         )
-        return "[ok] 已复制到剪贴板"
+        return "[ok] 已复制到剪贴板" if r.returncode == 0 else f"[error] 复制失败: {r.stderr.strip()[:200]}"
 
 
 # ---------- browser / url ----------
@@ -133,7 +137,12 @@ def clipboard_set(text: str) -> str:
 def open_url(url: str) -> str:
     """Open a URL in default browser. If no scheme, treat as search."""
     import webbrowser
-    url = url.strip()
+    url = (url or "").strip()
+    if len(url) > 2000:
+        return "[error] URL 过长"
+    low = url.lower()
+    if low.startswith(("javascript:", "data:", "vbscript:", "file:", "about:")):
+        return "[error] 不支持的 URL scheme（仅 http/https/搜索词）"
     if not url.startswith(("http://", "https://")):
         # no dot → treat as search query
         if "." not in url.split("/")[0]:
@@ -141,7 +150,10 @@ def open_url(url: str) -> str:
             url = f"https://www.baidu.com/s?wd={urllib.parse.quote(url)}"
         else:
             url = "https://" + url
-    webbrowser.open(url)
+    try:
+        webbrowser.open(url)
+    except Exception as e:
+        return f"[error] 打开失败: {type(e).__name__}: {e}"
     return f"[ok] 已在浏览器打开: {url}"
 
 
@@ -154,8 +166,20 @@ def take_screenshot(path: str = "") -> str:
     if not path:
         desk = _desktop()
         path = str(desk / f"截图_{time.strftime('%Y%m%d_%H%M%S')}.png")
-    img = pyautogui.screenshot()
-    img.save(path)
+    else:
+        from ._sandbox import check_path
+        ok, msg, p = check_path(path, for_write=True)
+        if not ok:
+            return msg
+        if p is not None and p.suffix.lower() not in (".png", ".jpg", ".jpeg"):
+            return "[error] 截图仅支持 .png/.jpg"
+        path = str(p) if p is not None else path
+    try:
+        img = pyautogui.screenshot()
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        img.save(path)
+    except Exception as e:
+        return f"[error] 截图失败: {type(e).__name__}: {e}"
     return f"[ok] 截图已保存: {path}"
 
 
@@ -262,7 +286,28 @@ TAKE_SCREENSHOT_DEF = {
 }
 
 
+# ---------- clock ----------
+
+def get_time() -> str:
+    """Current local date/time (weekday in Chinese). Prefer over shell `date`."""
+    import datetime
+    now = datetime.datetime.now().astimezone()
+    week = "一二三四五六日"[now.weekday()]
+    return now.strftime(f"%Y-%m-%d %H:%M:%S 周{week}（%Z）")
+
+
+GET_TIME_DEF = {
+    "type": "function",
+    "function": {
+        "name": "get_time",
+        "description": "看当前时间/日期/星期。用户问'几点了/今天周几'时用，别用 shell 查时间。",
+        "parameters": {"type": "object", "properties": {}},
+    },
+}
+
+
 SYSTEM_TOOLS: dict[str, dict] = {
+    "get_time": {"def": GET_TIME_DEF, "fn": get_time},
     "system_info": {"def": SYSTEM_INFO_DEF, "fn": system_info},
     "shutdown": {"def": SHUTDOWN_DEF, "fn": shutdown},
     "check_network": {"def": CHECK_NETWORK_DEF, "fn": check_network},

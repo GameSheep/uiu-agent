@@ -63,11 +63,17 @@ class WeComAdapter(BaseChannelAdapter):
                 continue
 
     def handle_webhook(self, body: dict) -> dict:
-        """Called by HTTP server when WeCom POSTs a callback."""
+        """Called by HTTP server when WeCom POSTs a callback.
+
+        注：企业微信官方回调是 AES 加密+签名，这里只收网关已鉴权
+        （UIU_GATEWAY_TOKEN）的明文转发明文，仍做类型/长度校验防伪造放大。
+        """
+        if not isinstance(body, dict):
+            return {"errcode": 1, "errmsg": "bad body"}
         if body.get("MsgType") == "text":
-            chat_id = str(body.get("FromUserName", ""))  # userid for app messages
-            text = body.get("Content", "")
-            if text and self.on_message:
+            chat_id = str(body.get("FromUserName", ""))[:128]  # userid for app messages
+            text = str(body.get("Content", ""))[:20000]
+            if chat_id and text.strip() and self.on_message:
                 self.on_message(chat_id, text)
         return {"errcode": 0, "errmsg": "ok"}
 

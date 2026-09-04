@@ -147,12 +147,18 @@ def _ensure_discovered() -> None:
     from .channels_dingtalk import DingTalkAdapter
     from .channels_discord import DiscordAdapter
     from .channels_slack import SlackAdapter
+    from .channels_webhook import WebhookAdapter
+    from .channels_email import EmailAdapter
+    from .channels_whatsapp import WhatsAppAdapter
     register_channel_adapter(TelegramAdapter)
     register_channel_adapter(FeishuAdapter)
     register_channel_adapter(WeComAdapter)
     register_channel_adapter(DingTalkAdapter)
     register_channel_adapter(DiscordAdapter)
     register_channel_adapter(SlackAdapter)
+    register_channel_adapter(WebhookAdapter)
+    register_channel_adapter(EmailAdapter)
+    register_channel_adapter(WhatsAppAdapter)
     # user plugins (last-writer-wins)
     user_dir = _user_channels_dir()
     if user_dir is not None:

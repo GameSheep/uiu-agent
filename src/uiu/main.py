@@ -20,19 +20,44 @@ import sys
 from pathlib import Path
 
 
-def _load_dotenv(path: Path = Path(".env")) -> None:
-    """Minimal .env loader — sets only keys not already in environ."""
-    if not path.exists():
-        return
-    for line in path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
+def _load_dotenv(path: Path | None = None, paths: list[Path] | None = None) -> None:
+    """Minimal .env loader — sets only keys not already in environ.
+
+    Searches in order:
+      1. explicit path (if given)
+      2. explicit paths list (if given)
+      3. ./.env
+      4. ./workspace/.env
+      5. ~/.uiu/workspace/.env
+    """
+    if paths is None:
+        paths = []
+        if path is not None:
+            paths.append(path)
+        paths += [
+            Path.cwd() / ".env",
+            Path.cwd() / "workspace" / ".env",
+            Path.home() / ".uiu" / "workspace" / ".env",
+        ]
+
+    seen: set[str] = set()
+    for p in paths:
+        if not p.exists() or p in seen:
             continue
-        k, v = line.split("=", 1)
-        k, v = k.strip(), v.strip()
-        if len(v) >= 2 and v[0] == v[-1] and v[0] in ('"', "'"):
-            v = v[1:-1]
-        os.environ.setdefault(k, v)
+        seen.add(p)
+        try:
+            text = p.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        for line in text.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            k, v = k.strip(), v.strip()
+            if len(v) >= 2 and v[0] == v[-1] and v[0] in ('"', "'"):
+                v = v[1:-1]
+            os.environ.setdefault(k, v)
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -66,6 +91,7 @@ def _build_parser() -> argparse.ArgumentParser:
     pc.add_argument("--unset-secret", metavar="KEY", help="remove a secret from .env")
     pc.add_argument("--list", action="store_true", help="list secrets")
     pc.add_argument("--show-values", action="store_true", help="don't redact values when --list")
+    pc.add_argument("--agent-name", help="set agent display name (shown in TUI header/status)")
 
     # skills
     psk = sub.add_parser("skills", help="search, install, and manage skills")
@@ -130,6 +156,33 @@ def _build_parser() -> argparse.ArgumentParser:
     pp = sub.add_parser("publish", help="build & upload to PyPI")
     pp.add_argument("--test", action="store_true", help="publish to TestPyPI (dry run for real PyPI)")
     pp.add_argument("--token", help="PyPI API token (or set env PYPI_TOKEN)")
+
+    # cron
+    pcr = sub.add_parser("cron", help="scheduled jobs (tick runs due jobs)")
+    pcr_sub = pcr.add_subparsers(dest="action", metavar="<action>", required=True)
+    pcr_sub.add_parser("list", help="list jobs")
+    pcr_add = pcr_sub.add_parser("add", help="add a job")
+    pcr_add.add_argument("name", help="job name")
+    pcr_add.add_argument("schedule", help="30m | 2h | 1d | daily 09:00 | 'M H * * *' | once <ISO>")
+    pcr_add.add_argument("task", help="agent task prompt to run")
+    pcr_rm = pcr_sub.add_parser("remove", help="remove a job (id or name)")
+    pcr_rm.add_argument("name")
+    pcr_en = pcr_sub.add_parser("enable", help="enable a job")
+    pcr_en.add_argument("name")
+    pcr_dis = pcr_sub.add_parser("disable", help="disable a job")
+    pcr_dis.add_argument("name")
+    pcr_run = pcr_sub.add_parser("run", help="run a job now (id or name)")
+    pcr_run.add_argument("name")
+    pcr_sub.add_parser("tick", help="run all due jobs once")
+
+    # sessions
+    pse = sub.add_parser("sessions", help="saved conversation sessions")
+    pse_sub = pse.add_subparsers(dest="action", metavar="<action>", required=True)
+    pse_sub.add_parser("list", help="list saved sessions")
+    pse_show = pse_sub.add_parser("show", help="show recent turns of a session")
+    pse_show.add_argument("name")
+    pse_rm = pse_sub.add_parser("remove", help="delete a session")
+    pse_rm.add_argument("name")
 
     return p
 
@@ -196,12 +249,12 @@ def _run_tui(args, parser: argparse.ArgumentParser) -> int:
 
     client = make_client(cfg.model)
     ws = load_workspace(ws_path)
-    return repl(client, ws, model=cfg.model.default, cfg=cfg.model)
+    return repl(client, ws, model=cfg.model.default, cfg=cfg.model, app_cfg=cfg)
 
 
 def _dispatch(args, parser: argparse.ArgumentParser) -> int:
     from .commands import (
-        cmd_channel, cmd_config, cmd_init, cmd_model, cmd_show,
+        cmd_channel, cmd_config, cmd_cron, cmd_init, cmd_model, cmd_sessions, cmd_show,
         cmd_update, cmd_version, cmd_skills, cmd_publish, cmd_plugins,
         cmd_serve,
     )
@@ -220,12 +273,25 @@ def _dispatch(args, parser: argparse.ArgumentParser) -> int:
         "publish": cmd_publish,
         "plugins": cmd_plugins,
         "serve": cmd_serve,
+        "cron": cmd_cron,
+        "sessions": cmd_sessions,
     }
     handler = handlers.get(args.cmd)
     if handler is None:
         # default: TUI
         return _run_tui(args, parser)
     return handler(args)
+
+
+def _resolve_workspace(args) -> Path | None:
+    """Best-effort resolve workspace from args or env (before parser dispatch)."""
+    ws_arg = getattr(args, "workspace", None) or os.environ.get("UIU_WORKSPACE")
+    if ws_arg:
+        return Path(ws_arg).expanduser()
+    for p in (Path.cwd() / "workspace", Path.home() / "workspace", Path.home() / ".uiu" / "workspace"):
+        if (p / "config.yaml").exists() or (p / "SOUL.md").exists():
+            return p
+    return None
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -245,12 +311,26 @@ def main(argv: list[str] | None = None) -> int:
     else:
         args = parser.parse_args(raw)
 
-    _load_dotenv()
+    # Load .env: explicit workspace > cwd/workspace > home workspace > cwd
+    ws_path = _resolve_workspace(args)
+    env_paths = [
+        Path.cwd() / ".env",
+        Path.cwd() / "workspace" / ".env",
+        Path.home() / ".uiu" / "workspace" / ".env",
+    ]
+    if ws_path:
+        env_paths.insert(0, ws_path / ".env")
+    _load_dotenv(paths=env_paths)
 
     if args.cmd == "__tui__":
         return _run_tui(args, parser)
 
-    return _dispatch(args, parser)
+    try:
+        return _dispatch(args, parser)
+    except RuntimeError as e:
+        # 配置损坏等可预期错误：友好提示而非堆栈
+        print(f"[error] {e}", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":

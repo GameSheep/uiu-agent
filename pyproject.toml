@@ -1,6 +1,6 @@
 [project]
 name = "uiu"
-version = "0.1.1"
+version = "0.1.5"
 description = "A minimal personal-IP agent: SOUL-driven, skills-extensible, OpenAI-compatible CLI."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -22,9 +22,7 @@ dependencies = [
     "rich>=13.7.0",
     "prompt-toolkit>=3.0.43",
     "pyyaml>=6.0",
-    # channel adapters
-    "dingtalk-stream>=0.18.0",
-    "discord.py>=2.3.0",
+    # channel adapters (lightweight socket clients; heavy SDKs stay optional)
     "slack-bolt>=1.18.0",
     # screen automation (click by name via OCR)
     "rapidocr-onnxruntime>=1.3.0",
@@ -37,12 +35,39 @@ dependencies = [
     # system info / clipboard
     "psutil>=5.9.0",
     "pyperclip>=1.8.0",
+    # Fast OCR (Windows native, < 1s)
+    "screen-ocr[winrt]>=0.5.0",
 ]
 
+[project.optional-dependencies]
+# pip install uiu[channels] — 钉钉/Disord 全量适配
+channels = [
+    "dingtalk-stream>=0.18.0",
+    "discord.py>=2.3.0",
+]
+# pip install uiu[desktop] — CV 桌面自动化（需大模型 key）
+desktop = ["askui>=0.1.0"]
+# pip install uiu[browser] — AI 浏览器（拖 playwright+chromium，体积大）
+browser = ["browser-use>=0.1.0"]
+# pip install uiu[mcp] — 外部工具协议
+mcp = ["mcp>=1.28.0"]
+# pip install uiu[voice] — TTS（STT 的 whisper/sounddevice 另见 README）
+voice = ["edge-tts>=6.1.0", "pyttsx3>=2.90"]
+# pip install uiu[rag] — 本地向量记忆（拖 torch ~2GB + 首次下载模型）
+rag = ["chromadb>=0.4.0", "sentence-transformers>=2.2.0"]
+# pip install uiu[all] — 全部重依赖
+all = [
+    "uiu[channels]", "uiu[desktop]", "uiu[browser]",
+    "uiu[mcp]", "uiu[voice]", "uiu[rag]",
+]
+# pip install -e ".[test]" — 跑 tests/
+test = ["pytest>=8.0.0"]
+
 [project.urls]
-Homepage = "https://github.com/YOUR_GITHUB/uiu"
-Repository = "https://github.com/YOUR_GITHUB/uiu"
-Issues = "https://github.com/YOUR_GITHUB/uiu/issues"
+# 发布前改成你自己的仓库地址
+Homepage = "https://github.com/uiu-agent/uiu"
+Repository = "https://github.com/uiu-agent/uiu"
+Issues = "https://github.com/uiu-agent/uiu/issues"
 
 [project.scripts]
 uiu = "uiu.main:main"
@@ -53,15 +78,12 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/uiu"]
-
-[tool.hatch.build.targets.wheel.force-include]
-# 首次 init 用的默认 workspace 模板，随包分发
-"workspace/SOUL.md" = "uiu/_default_workspace/SOUL.md"
-"workspace/IDENTITY.md" = "uiu/_default_workspace/IDENTITY.md"
-"workspace/USER.md" = "uiu/_default_workspace/USER.md"
-"workspace/MEMORY.md" = "uiu/_default_workspace/MEMORY.md"
-"workspace/skills/echo/SKILL.md" = "uiu/_default_workspace/skills/echo/SKILL.md"
+# _default_workspace / _default_skills 已在 src/uiu 内，随包自动打进 wheel，无需 force-include
 
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["uiu*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

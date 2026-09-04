@@ -27,6 +27,9 @@ from .workspace import Workspace, load_workspace
 
 
 class Gateway:
+    MAX_SESSIONS = 500
+    MAX_MESSAGE_CHARS = 20000
+
     def __init__(self, cfg: AppConfig, ws: Workspace):
         self.cfg = cfg
         self.ws = ws
@@ -35,14 +38,101 @@ class Gateway:
         self.sessions: dict[str, list[dict]] = {}  # chat_id -> messages
         self.adapters: list = []
         self._origin: dict[str, str] = {}  # chat_id -> channel name
+        self._lock = threading.Lock()
+        self._pending: dict[str, "queue.Queue[str]"] = {}  # clarify 等待下一条消息
+        self._local = threading.local()
+        # 可选网关鉴权：设 UIU_GATEWAY_TOKEN 后 webhook 需带 X-Gateway-Token
+        import os as _os
+        self._gateway_token = _os.environ.get("UIU_GATEWAY_TOKEN", "")
+        try:
+            from .delegation import set_context as _set_delegation_ctx
+            _set_delegation_ctx(self.client, cfg.model, ws, self.tool_schemas)
+        except Exception:
+            pass
+        try:
+            from .clarify import set_ask_handler as _set_ask
+            _set_ask(self._ask_via_chat)
+        except Exception:
+            pass
+
+    def _ask_via_chat(self, question: str, options: list[str] | None) -> str:
+        """clarify 网关实现：发问题到当前聊天，阻塞等下一条消息（120s 超时）。"""
+        import queue as _queue
+        chat_id = getattr(self._local, "chat_id", "")
+        if not chat_id:
+            return ""
+        text = question
+        if options:
+            text += "\n" + "\n".join(f"{i}. {o}" for i, o in enumerate(options, 1))
+        q: _queue.Queue[str] = _queue.Queue()
+        with self._lock:
+            self._pending[chat_id] = q
+        try:
+            self._send_to_chat(chat_id, text)
+            return q.get(timeout=120)
+        except Exception:
+            return ""
+        finally:
+            with self._lock:
+                self._pending.pop(chat_id, None)
+
+    def _send_to_chat(self, chat_id: str, text: str) -> None:
+        with self._lock:
+            origin_name = dict(self._origin).get(chat_id, "")
+            adapters = list(self.adapters)
+        for ad in adapters:
+            if ad.config.name == origin_name:
+                ad.send(chat_id, text)
+                return
+        for ad in adapters:
+            ok, _ = ad.send(chat_id, text)
+            if ok:
+                return
 
     def _session_messages(self, chat_id: str) -> list[dict]:
-        if chat_id not in self.sessions:
-            self.sessions[chat_id] = [{"role": "system", "content": self.ws.system_prompt()}]
-        return self.sessions[chat_id]
+        with self._lock:
+            if chat_id not in self.sessions:
+                if len(self.sessions) >= self.MAX_SESSIONS:
+                    # 驱逐最旧会话，防内存刷爆
+                    oldest = next(iter(self.sessions))
+                    del self.sessions[oldest]
+                self.sessions[chat_id] = [{"role": "system", "content": self.ws.system_prompt()}]
+            return self.sessions[chat_id]
 
     def on_message(self, chat_id: str, text: str) -> None:
         """Called by an adapter when a message arrives. Runs agent + sends reply."""
+        chat_id = str(chat_id or "")[:128]
+        text = (text or "")[: self.MAX_MESSAGE_CHARS]
+        if not chat_id or not text.strip():
+            return
+        # clarify 等待中：这条消息是答案，直接投递，不跑 agent
+        with self._lock:
+            pending = self._pending.get(chat_id)
+        if pending is not None:
+            try:
+                pending.put_nowait(text)
+            except Exception:
+                pass
+            return
+        # slash 命令（TUI 同款注册表）
+        if text.startswith("/") and not text.startswith("//"):
+            from .slash import SlashContext, dispatch
+            say_out: list[str] = []
+
+            def _say(t: str) -> None:
+                say_out.append(t)
+
+            sctx = SlashContext(ws=self.ws, cfg=self.cfg, client=self.client,
+                                 messages=None, chat_id=chat_id, say=_say,
+                                 tool_schemas=self.tool_schemas)
+            try:
+                dispatch(text, sctx)
+            except Exception as e:
+                say_out.append(f"[error] {type(e).__name__}: {e}")
+            if say_out:
+                self._send_to_chat(chat_id, "\n".join(say_out))
+            return
+        self._local.chat_id = chat_id
         print(f"[gateway] {chat_id}: {text[:60]}", flush=True)
         messages = self._session_messages(chat_id)
         messages.append({"role": "user", "content": text})
@@ -59,17 +149,30 @@ class Gateway:
         except Exception as e:
             reply = f"[error] {type(e).__name__}: {e}"
         # send back on the originating adapter
+        with self._lock:
+            origin_name = dict(self._origin).get(chat_id, "")
         for ad in self.adapters:
-            if ad.config.name == self._origin_channel.get(chat_id, ""):
+            if ad.config.name == origin_name:
                 ok, msg = ad.send(chat_id, reply)
                 if not ok:
                     print(f"[gateway] send failed ({ad.name}): {msg}", file=sys.stderr)
+                self._persist(chat_id, messages)
                 return
         # fallback: send on any adapter
         for ad in self.adapters:
             ok, msg = ad.send(chat_id, reply)
             if ok:
+                self._persist(chat_id, messages)
                 return
+        self._persist(chat_id, messages)
+
+    def _persist(self, chat_id: str, messages: list[dict]) -> None:
+        """会话落盘（compact 后存，重启可 resume）。"""
+        try:
+            from .sessions import compact_messages, save_session
+            save_session(self.ws.root, f"gw-{chat_id}", compact_messages(messages))
+        except Exception as e:
+            print(f"[gateway] persist failed: {e}", file=sys.stderr)
 
     def _origin_channel(self) -> dict[str, str]:
         return self._origin
@@ -99,7 +202,8 @@ class Gateway:
 
             def make_handler(ad):
                 def handler(chat_id, text):
-                    self._origin[chat_id] = ad.config.name
+                    with self._lock:
+                        self._origin[chat_id] = ad.config.name
                     orig_on_message(chat_id, text)
                 return handler
             adapter.on_message = make_handler(adapter)
@@ -114,6 +218,21 @@ class Gateway:
                 print(f"[gateway]  !! {c.name} check 异常: {e}")
             adapter.start()
 
+        # cron tick 线程：每 60s 跑到期任务
+        cron_stop = threading.Event()
+
+        def _cron_loop():
+            from . import cron as _cron
+            while not cron_stop.wait(60):
+                try:
+                    ran = _cron.tick(self.ws.root)
+                    for out in ran:
+                        print(f"[cron] ran → {out}", flush=True)
+                except Exception as e:
+                    print(f"[cron] tick failed: {e}", file=sys.stderr)
+
+        threading.Thread(target=_cron_loop, daemon=True).start()
+
         try:
             if http_server:
                 print(f"[gateway] webhook 服务器: http://0.0.0.0:{port}  (飞书/企微回调指到这里)")
@@ -121,6 +240,7 @@ class Gateway:
         except KeyboardInterrupt:
             print("\n[gateway] 停止…")
         finally:
+            cron_stop.set()
             for ad in self.adapters:
                 ad.stop()
             if http_server:
@@ -141,12 +261,46 @@ class Gateway:
                     echo = qs.get("echostr", "")
                     self._json({"errcode": 0, "errmsg": "ok", "echostr": echo})
                     return
+                if self.path.startswith("/api/channels"):
+                    if gate._gateway_token and self.headers.get("X-Gateway-Token", "") != gate._gateway_token:
+                        self._json({"code": 1, "msg": "unauthorized"}, status=401)
+                        return
+                    self._json({"channels": [
+                        {"name": ad.config.name, "type": ad.name,
+                         "enabled": ad.config.enabled} for ad in gate.adapters]})
+                    return
+                if self.path.startswith("/whatsapp"):
+                    # Meta 回调校验：hub.mode=subscribe & hub.verify_token 对上即回 challenge
+                    qs = dict(x.split("=", 1) for x in self.path.split("?", 1)[-1].split("&") if "=" in x)
+                    for ad in gate.adapters:
+                        if ad.name == "whatsapp" and qs.get("hub.mode") == "subscribe" \
+                                and qs.get("hub.verify_token") == ad.verify:
+                            self._json(int(qs.get("hub.challenge", "0")) or {"ok": True})
+                            return
+                    self._json({"code": 1, "msg": "verify failed"}, status=403)
+                    return
                 self._json({"ok": True, "service": "uiu gateway"})
 
             def do_POST(self):
+                MAX_BODY = 1 * 1024 * 1024  # 1MB 上限，防内存 DoS
+                # 网关 token 只卡 /api/* 与 /generic/*；各平台回调走自有校验
+                #（飞书 verify_token、企微/WhatsApp 签名），避免公网回调被误杀
+                if self.path.startswith(("/api/", "/generic")) and gate._gateway_token:
+                    got = self.headers.get("X-Gateway-Token", "")
+                    if got != gate._gateway_token:
+                        self._json({"code": 1, "msg": "unauthorized"}, status=401)
+                        return
                 try:
                     length = int(self.headers.get("Content-Length", 0))
-                    body = json.loads(self.rfile.read(length).decode("utf-8"))
+                except (TypeError, ValueError):
+                    self._json({"code": 1, "msg": "bad length"}, status=400)
+                    return
+                if length <= 0 or length > MAX_BODY:
+                    self._json({"code": 1, "msg": "bad length"}, status=400)
+                    return
+                try:
+                    raw = self.rfile.read(length)
+                    body = json.loads(raw.decode("utf-8"))
                 except Exception:
                     self._json({"code": 1, "msg": "bad json"}, status=400)
                     return
@@ -159,6 +313,43 @@ class Gateway:
                 if self.path.startswith("/wecom"):
                     for ad in gate.adapters:
                         if ad.name == "wecom":
+                            resp = ad.handle_webhook(body)
+                            self._json(resp)
+                            return
+                if self.path.startswith("/api/send"):
+                    # api_server：编程方式外发消息 {chat_id, text, channel?}
+                    if not isinstance(body, dict):
+                        self._json({"code": 1, "msg": "bad body"}, status=400)
+                        return
+                    chat_id = str(body.get("chat_id", ""))[:128]
+                    text = str(body.get("text", ""))[:20000]
+                    want = str(body.get("channel", ""))
+                    if not chat_id or not text.strip():
+                        self._json({"code": 1, "msg": "chat_id/text 必填"}, status=400)
+                        return
+                    sent, info = False, "no adapter"
+                    for ad in gate.adapters:
+                        if want and ad.config.name != want and ad.name != want:
+                            continue
+                        ok, msg = ad.send(chat_id, text)
+                        if ok:
+                            sent, info = True, "sent"
+                            break
+                        info = msg
+                    self._json({"code": 0 if sent else 1, "msg": info})
+                    return
+                if self.path.startswith("/generic"):
+                    # 通用 webhook 平台：/generic/<name>，body 按 adapter options 取字段
+                    rest = self.path[len("/generic"):].strip("/")
+                    qs = dict(x.split("=", 1) for x in self.path.split("?", 1)[-1].split("&") if "=" in x)
+                    for ad in gate.adapters:
+                        if ad.name == "webhook" and ad.config.name == rest:
+                            resp = ad.handle_webhook(body, qs.get("secret", ""))
+                            self._json(resp)
+                            return
+                if self.path.startswith("/whatsapp"):
+                    for ad in gate.adapters:
+                        if ad.name == "whatsapp":
                             resp = ad.handle_webhook(body)
                             self._json(resp)
                             return

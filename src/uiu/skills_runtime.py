@@ -65,3 +65,68 @@ def _builtin_say_hello(input: str) -> str:
 
 register("echo", _builtin_echo)
 register("say_hello", _builtin_say_hello)
+
+
+# ---------- progressive disclosure (Hermes skills_list/skill_view) ----------
+
+def _current_skills():
+    """Stateless: reload index from disk so list/view never go stale."""
+    from .workspace import find_workspace, load_workspace
+    try:
+        return load_workspace(find_workspace()).skills
+    except Exception:
+        return []
+
+
+def skills_list() -> str:
+    """List skill index (names + one-line descriptions only)."""
+    skills = _current_skills()
+    if not skills:
+        return "(no skills — add SKILL.md under workspace/skills/<name>/)"
+    return "\n".join(f"- {s.name}: {s.description[:160]}" for s in skills)
+
+
+def skill_view(name: str) -> str:
+    """Read one skill's full SKILL.md body on demand."""
+    name = (name or "").strip()
+    if not name:
+        return "[error] name 不能为空"
+    for s in _current_skills():
+        if s.name == name:
+            body = s.body or ""
+            if len(body) > 12000:
+                body = body[:12000] + "\n…（已截断）"
+            return f"# skill/{s.name}\n{s.description}\n\n{body}"
+    return f"[error] 未知 skill: {name}（用 skills_list 看索引）"
+
+
+SKILLS_LIST_DEF = {
+    "type": "function",
+    "function": {
+        "name": "skills_list",
+        "description": "列出 skill 索引（仅名字+一句话）。需要某个 skill 的完整用法时再 skill_view 取全文。",
+        "parameters": {"type": "object", "properties": {}},
+    },
+}
+
+SKILL_VIEW_DEF = {
+    "type": "function",
+    "function": {
+        "name": "skill_view",
+        "description": "按需读取一个 skill 的完整 SKILL.md 全文。",
+        "parameters": {
+            "type": "object",
+            "properties": {"name": {"type": "string", "description": "skill 名"}},
+            "required": ["name"],
+        },
+    },
+}
+
+SKILL_INDEX_TOOLS: dict[str, dict] = {
+    "skills_list": {"def": SKILLS_LIST_DEF, "fn": skills_list},
+    "skill_view": {"def": SKILL_VIEW_DEF, "fn": skill_view},
+}
+
+
+def skill_index_tool_defs() -> list[dict]:
+    return [t["def"] for t in SKILL_INDEX_TOOLS.values()]

@@ -67,7 +67,25 @@ class ModelConfig:
                     env_name = prof.api_key_env
             except Exception:
                 pass
-        return os.environ.get(env_name, "") if env_name else ""
+        # 1. os.environ (highest priority: already loaded or explicitly set)
+        val = os.environ.get(env_name, "") if env_name else ""
+        if val:
+            return val
+        # 2. fallback: read from workspace .env files directly (any cwd)
+        if env_name:
+            for env_path in (
+                Path.cwd() / ".env",
+                Path.cwd() / "workspace" / ".env",
+                Path.home() / ".uiu" / "workspace" / ".env",
+            ):
+                try:
+                    if env_path.exists():
+                        val = parse_env_file(env_path).get(env_name, "")
+                        if val:
+                            return val
+                except Exception:
+                    continue
+        return ""
 
 
 # ---------- channel ----------
@@ -91,12 +109,14 @@ class AppConfig:
     agent_name: str = "uiu"
     model: ModelConfig = field(default_factory=ModelConfig)
     channels: list[ChannelConfig] = field(default_factory=list)
+    mcp_servers: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
             "agent_name": self.agent_name,
             "model": asdict(self.model),
             "channels": [asdict(c) for c in self.channels],
+            "mcp_servers": self.mcp_servers,
         }
 
     @classmethod
@@ -109,10 +129,12 @@ class AppConfig:
         elif "model" in m and "default" not in m:
             m["default"] = m.pop("model")
         channels = [ChannelConfig(**c) for c in (d.get("channels") or [])]
+        mcp_servers = d.get("mcp_servers", [])
         return cls(
             agent_name=d.get("agent_name", "uiu"),
             model=ModelConfig(**m),
             channels=channels,
+            mcp_servers=mcp_servers,
         )
 
     def channel(self, name: str) -> ChannelConfig | None:
@@ -120,6 +142,23 @@ class AppConfig:
             if c.name == name:
                 return c
         return None
+
+
+def resolve_agent_name(cfg: "AppConfig | None", ws=None) -> str:
+    """Display name for the agent (shown in TUI header/status).
+
+    Priority: `uiu config --agent-name X` (config.yaml) > IDENTITY.md parsed
+    name (`## 名字` / `# IDENTITY — X`) > "agent". Either is user-editable.
+    """
+    if cfg is not None and getattr(cfg, "agent_name", "") not in ("", "uiu"):
+        return str(cfg.agent_name)[:32]
+    try:
+        if ws is not None and hasattr(ws, "agent_name"):
+            name = ws.agent_name() or "agent"
+            return name[:32]
+    except Exception:
+        pass
+    return "agent"
 
 
 # ---------- .env ----------
@@ -168,7 +207,6 @@ def write_env_file(path: Path, values: dict[str, str], overwrite: bool = False) 
 def config_yaml_path(workspace: Path) -> Path:
     return workspace / "config.yaml"
 
-
 def load_config(workspace: Path) -> AppConfig:
     path = config_yaml_path(workspace)
     if not path.exists():
@@ -176,9 +214,17 @@ def load_config(workspace: Path) -> AppConfig:
     if not _HAS_YAML:
         # very tiny fallback: only handles top-level scalars + channels list of dicts
         return _load_config_fallback(path)
-    with path.open("r", encoding="utf-8") as f:
-        data = yaml.safe_load(f) or {}
-    return AppConfig.from_dict(data)
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+    except Exception as e:
+        raise RuntimeError(f"config.yaml 解析失败 ({path}): {type(e).__name__}: {e}") from e
+    if not isinstance(data, dict):
+        raise RuntimeError(f"config.yaml 顶层须为 mapping ({path})")
+    try:
+        return AppConfig.from_dict(data)
+    except Exception as e:
+        raise RuntimeError(f"config.yaml 结构非法 ({path}): {type(e).__name__}: {e}") from e
 
 
 def save_config(workspace: Path, cfg: AppConfig) -> None:

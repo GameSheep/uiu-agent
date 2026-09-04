@@ -1,0 +1,11 @@
+agent_name: uiu
+model:
+  provider: deepseek
+  default: deepseek-v4-flash
+  base_url: ''
+  api_mode: chat_completions
+  temperature: 0.7
+  max_tokens: 4096
+  api_key_env: DEEPSEEK_API_KEY
+channels: []
+mcp_servers: []

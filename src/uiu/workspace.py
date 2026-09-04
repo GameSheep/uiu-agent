@@ -84,9 +84,36 @@ class Workspace:
             parts.append(f"# USER\n{self.user}")
         if self.memory:
             parts.append(f"# MEMORY (across sessions)\n{self.memory}")
+        idx = self.skills_index()
+        if idx:
+            parts.append(
+                "# SKILLS（渐进披露：只给了索引，需要时用 skills_list / skill_view 按需取全文，"
+                "可执行的 skill_* 工具已在工具列表中）\n" + idx)
         if not parts:
             parts.append("You are a helpful assistant.")
         return "\n\n".join(parts)
+
+    def skills_index(self) -> str:
+        """One-line-per-skill index (cheap) — full bodies via skill_view."""
+        return "\n".join(f"- {s.name}: {s.description[:160]}" for s in self.skills)
+
+    def agent_name(self) -> str:
+        """Display name, editable by the user via IDENTITY.md.
+
+        Recognition order: `## 名字` section > `# IDENTITY — X` heading >
+        `名字：X` line. Fallback: "agent".
+        """
+        text = self.identity or ""
+        m = re.search(r"^##?\s*名字\s*\n+\s*(\S+)", text, re.M)
+        if m:
+            return m.group(1).strip()[:32]
+        m = re.search(r"^#\s*IDENTITY\s*[—\-–:：]\s*(\S+)", text, re.M)
+        if m:
+            return m.group(1).strip()[:32]
+        m = re.search(r"名字\s*[：:]\s*(\S+)", text)
+        if m:
+            return m.group(1).strip()[:32]
+        return "agent"
 
 
 def find_workspace() -> Path:
@@ -116,18 +143,67 @@ def load_workspace(root: Path | None = None) -> Workspace:
             continue
         setattr(ws, name.replace(".md", "").lower(), content)
 
-    skills_dir = root / "skills"
-    if skills_dir.is_dir():
-        for skill_dir in sorted(skills_dir.iterdir()):
+    # Load skills: core (package + workspace/_default) + ext (workspace/_ext overrides)
+    # Ext skills with same name override core skills
+    skills_map: dict[str, Skill] = {}
+
+    # 1. Core skills from package directory
+    for core_dir in (
+        Path(__file__).parent / "_default_skills",
+        root / "skills" / "_default",   # synced via `uiu update skills`
+    ):
+        if not core_dir.is_dir():
+            continue
+        for skill_dir in sorted(core_dir.iterdir()):
             if not skill_dir.is_dir():
                 continue
             skill_file = skill_dir / "SKILL.md"
             if not skill_file.exists():
                 continue
-            text = skill_file.read_text(encoding="utf-8")
+            try:
+                text = skill_file.read_text(encoding="utf-8")
+            except OSError as e:
+                print(f"[workspace] skip skill {skill_dir.name}: {e}", file=sys.stderr)
+                continue
             name, description, body = _parse_skill_md(text, fallback_name=skill_dir.name)
-            ws.skills.append(Skill(name=name, description=description, body=body, path=skill_file))
+            # package core wins over synced _default copy (keep original if exists)
+            skills_map.setdefault(name, Skill(name=name, description=description, body=body, path=skill_file))
 
+    # 2. Ext skills from workspace (override core)
+    ext_skills_dir = root / "skills" / "_ext"
+    if ext_skills_dir.is_dir():
+        for skill_dir in sorted(ext_skills_dir.iterdir()):
+            if not skill_dir.is_dir():
+                continue
+            skill_file = skill_dir / "SKILL.md"
+            if not skill_file.exists():
+                continue
+            try:
+                text = skill_file.read_text(encoding="utf-8")
+            except OSError as e:
+                print(f"[workspace] skip skill {skill_dir.name}: {e}", file=sys.stderr)
+                continue
+            name, description, body = _parse_skill_md(text, fallback_name=skill_dir.name)
+            skills_map[name] = Skill(name=name, description=description, body=body, path=skill_file)
+
+    # 3. User skills from workspace/skills (non-_ dirs, override core)
+    user_skills_dir = root / "skills"
+    if user_skills_dir.is_dir():
+        for skill_dir in sorted(user_skills_dir.iterdir()):
+            if not skill_dir.is_dir() or skill_dir.name.startswith("_"):
+                continue
+            skill_file = skill_dir / "SKILL.md"
+            if not skill_file.exists():
+                continue
+            try:
+                text = skill_file.read_text(encoding="utf-8")
+            except OSError as e:
+                print(f"[workspace] skip skill {skill_dir.name}: {e}", file=sys.stderr)
+                continue
+            name, description, body = _parse_skill_md(text, fallback_name=skill_dir.name)
+            skills_map[name] = Skill(name=name, description=description, body=body, path=skill_file)
+
+    ws.skills = list(skills_map.values())
     return ws
 
 

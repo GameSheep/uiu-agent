@@ -4,9 +4,11 @@
 
 ## 它能做什么
 
-- 跟你多轮对话，记住上下文（同一会话内）。
-- 自动调用 8 个内置工具：`shell_exec` / `read_file` / `write_file` + **5 个自学习工具**。
-- 自动调用 `workspace/skills/*/SKILL.md` 里声明的 skill。
+- 跟你多轮对话，记住上下文（同一会话内；`/save` 可跨会话 resume）。
+- 自动调用 63 个内置工具（文件/shell/后台进程/屏幕 OCR/桌面控制/系统/微信/输入法/子 agent 派发/联网搜索/浏览器/MCP 动态工具…）。
+- skill 渐进披露：system prompt 只带索引，用 `skills_list` / `skill_view` 按需取全文。
+- `cron` 定时任务：到点自动跑 agent 并落盘（`uiu serve` 内每 60s tick）。
+- 不确定就反问：`clarify` 工具阻塞等你回答再干活。
 - 你的"人设"写在 `workspace/SOUL.md` 里——改它，agent 就变样。
 - 长记忆写在 `workspace/MEMORY.md`——对话里 `/memory <note>` 一键追加。
 - **自我学习（Hermes learning loop）**：主动记记忆、沉淀技能、改进技能。
@@ -33,31 +35,31 @@
 | `type_text` | 在当前输入框输入文字 |
 | `press_key` | 按键/组合键（enter、ctrl+s） |
 
-## Windows 桌面控制（CLI 里远程操作桌面）
+## Windows 桌面控制（通用 GUI 原子操作 + 微信闭环）
 
 ```
-"切到微信"                 → agent: list_windows + switch_window
-"显示桌面"                 → agent: run_hotkey('win+d')
-"打开资源管理器"           → agent: run_hotkey('win+e')
-"点任务栏的 Chrome"        → agent: taskbar_click
-"现在开着什么窗口？"        → agent: list_windows
-"最小化 VS Code"           → agent: window_action('code', 'minimize')
+"切到微信"                 → agent: window_list + window_focus
+"显示桌面"                 → agent: keyboard_shortcut(['win', 'd'])
+"打开资源管理器"           → agent: app_launch('explorer')
+"点任务栏的 Chrome"        → agent: screen_ocr_find + mouse_click_at
+"现在开着什么窗口？"        → agent: window_list
+"给文件传输助手发消息"      → agent: send_wechat（8 步闭环，见下）
 ```
 
 工具：
 | 工具 | 干嘛 |
 |---|---|
-| `list_windows` | 列出所有打开窗口（26 个实测可列） |
-| `switch_window` | 按标题切换窗口（前台激活，实测切到微信成功） |
-| `window_action` | 最小化/最大化/还原/关闭窗口 |
-| `run_hotkey` | 执行系统快捷键（内置 30 个：win+d/e/l、alt+tab、alt+f4、win+shift+s…） |
-| `taskbar_click` | 点任务栏程序图标（OCR 定位） |
-| `get_foreground_window` | 当前前台窗口标题 |
-| `focus_input` | 点击前台窗口中心获得输入焦点 |
+| `window_list` | 列出所有可见窗口（标题/HWND/位置） |
+| `window_focus` | 按标题关键字置顶激活窗口 |
+| `app_launch` | 启动程序/打开文件/URL（无 shell 解析，防注入） |
+| `screen_ocr_find` | 屏幕找字返坐标（可滚动查找） |
+| `mouse_click_at` | 按绝对坐标点击（含双击） |
+| `mouse_scroll_at` | 指定位置滚轮 |
+| `text_paste` | 剪贴板粘贴中英文（防输入法干扰） |
+| `keyboard_shortcut` | 组合键/单键（校验合法键名） |
+| `send_wechat` | 微信 8 步闭环发送（定位→双击弹窗→标题核对→粘贴→输入区核对→发送→聊天区核对，任一步失败即停） |
 
-**实测**：26 窗口枚举、切换微信、win+d 显示桌面全部在真实 Windows 上验证通过。
-
-## 系统管理（30 个工具全景）
+## 系统管理（7 个系统工具）
 
 ```
 "电脑卡不卡 / 内存多大 / 还有多少电"  → system_info
@@ -77,15 +79,30 @@
 | `open_url` | 浏览器打开网址或搜索 |
 | `take_screenshot` | 截屏存桌面 |
 
-## 工具全景（30 个）
+## 工具全景（62 个，17 组）
 
 | 类 | 工具 |
 |---|---|
 | 基础 | shell_exec / read_file / write_file / read_spreadsheet |
-| 自学习 | memory_add / recall / replace / skill_create / skill_improve |
-| 屏幕 | click_text / screen_read_text / type_text / press_key |
-| 桌面 | list_windows / switch_window / window_action / run_hotkey(30个) / taskbar_click / get_foreground_window / focus_input / scroll / open_app / list_files |
-| 系统 | system_info / shutdown / check_network / clipboard_get/set / open_url / take_screenshot |
+| 后台进程 | proc_run / proc_log / proc_kill / list_procs（耗时命令不阻塞） |
+| 自学习 | memory_add / memory_recall / memory_replace / skill_create / skill_improve |
+| skill 索引 | skills_list / skill_view（渐进披露，按需取全文） |
+| 澄清 | clarify（反问用户并阻塞等回答） |
+| 屏幕 OCR | click_text / screen_read_text / type_text / press_key / ocr_region / click_in_region |
+| 桌面 | window_list / window_focus / app_launch / screen_ocr_find / mouse_click_at / mouse_scroll_at / text_paste / keyboard_shortcut |
+| 系统 | system_info / get_time / shutdown / check_network / clipboard_get/set / open_url / take_screenshot |
+| 联网 | web_search（DuckDuckGo，零配置） / web_extract（正文抽取） |
+| 浏览器 | browser_open / browser_navigate / browser_snapshot / browser_click / browser_fill（后四个需 `pip install playwright`） / browser_use（AI 自主操作，需 `pip install uiu[browser]`） |
+| 微信 | send_wechat（UI 自动化，发送不可撤回，调用前确认） |
+| 输入法 | ime_state / ensure_english_ime（键盘输入前先查输入法，防中文 IME 吃字母） |
+| 子 agent | delegate_task（内建隔离派发，可限工具白名单） / delegate_batch（并行最多8个） / delegate + list_agents（外部 claude/codex CLI） |
+| 视觉桌面 | look / askui_autopilot（需 `pip install uiu[desktop]` + 模型 key） |
+| 语音 | speak / listen / voice_state（需 `pip install uiu[voice]`；STT 另需 whisper 相关包） |
+| 向量记忆 | add_memory / auto_embed / recall_semantic / memory_state（需 `pip install uiu[rag]`，拖 torch ~2GB） |
+| MCP | 连上 MCP server 后动态注入（`mcp_*`），需 `pip install uiu[mcp]` |
+
+> 安全边界：文件读写走路径沙箱（系统目录 + `.env`/密钥文件拒绝，单文件 512KB 上限）；
+> `shell_exec` 拦截关机/格式化等危险命令；网关 webhook 支持 `UIU_GATEWAY_TOKEN` 鉴权。
 
 ## 自我学习（Hermes 对齐）
 
@@ -144,7 +161,8 @@ pipx run uiu
 cd E:\Code\Personal\agent\my-agent
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-pip install -e .
+pip install -e .                    # 仅核心依赖
+pip install -e ".[all]"             # 含重依赖（CV/浏览器/RAG/语音/MCP/全渠道）
 ```
 
 ## 快速上手
@@ -201,6 +219,7 @@ uiu config --set-secret TELEGRAM_BOT_TOKEN=...   # 任意 key=value
 uiu config --list                                # 列出所有 secret（默认打码）
 uiu config --list --show-values                  # 明文列出
 uiu config --unset-secret TELEGRAM_BOT_TOKEN
+uiu config --agent-name 小刃                     # 改 agent 显示名（TUI 顶栏/状态条即时生效）
 ```
 
 ### `skills`
@@ -286,9 +305,14 @@ uiu serve --port 9000
 ```
 
 - **Telegram**：长轮询 `getUpdates`，无需公网
-- **飞书 / 企微**：起本地 HTTP server（`http://0.0.0.0:8765/feishu`、`/wecom`），需要把平台的回调地址指向这里（用内网穿透如 ngrok/frp 暴露公网）
-- 每个 chat_id 独立会话上下文，支持多人群聊/私聊
-- 按 channel 自动路由回复（消息从哪个平台来，回复回哪去）
+- **飞书 / 企微 / WhatsApp**：起本地 HTTP server（`/feishu`、`/wecom`、`/whatsapp`），需要把平台的回调地址指向这里（用内网穿透如 ngrok/frp 暴露公网）
+- **通用 webhook**：任意系统 `POST /generic/<channel名>` 即变消息源（`chat_field`/`text_field` 配字段路径，`secret` 配校验）
+- **api_server**：`POST /api/send {chat_id, text, channel?}` 编程外发，`GET /api/channels` 看在线通道（设 `UIU_GATEWAY_TOKEN` 后需带 `X-Gateway-Token` 头）
+- 每个 chat_id 独立会话上下文（落盘 `sessions/gw-<chat>.json`，重启不丢），支持多人群聊/私聊
+- 网关内 slash 命令与 TUI 同款（`/cron`、`/sessions` 等直接对聊天发）
+- cron tick：serve 内每 60s 自动跑到期定时任务，结果进 `cron/output/`
+
+**加 channel（9 种）：telegram / feishu / wecom / dingtalk / discord / slack / whatsapp / email / webhook**，通用操作同下。WhatsApp 需 `-o phone_id=` + `WHATSAPP_TOKEN`；邮箱需 `-o imap= -o smtp= -o user=` + `EMAIL_PASSWORD`（建议应用专用密码）。
 
 **Channel 插件**：放 `~/.uiu/channels/<name>/__init__.py`（继承 BaseChannelAdapter，实现 check/start/send），`uiu serve` 自动发现。改平台不用改核心代码。
 
@@ -335,17 +359,47 @@ uiu version
 
 ## TUI 内置命令
 
-在 TUI 内（`uiu` 不带参数）：
+在 TUI 内（`uiu` 不带参数），slash 命令与网关聊天共用同一注册表：
 
 | 命令 | 干嘛 |
 |---|---|
 | `/help` | 帮助 |
-| `/skills` | 列出已加载的 skill |
+| `/skills` / `/skills reload` | 列出 / 重载 skill |
 | `/tools` | 列出内置工具 |
 | `/identity` | 打印 IDENTITY.md |
 | `/memory <内容>` | 追加一行到 MEMORY.md |
+| `/soul <内容>` | 追加一行到 SOUL.md |
+| `/save [名]` / `/resume [名]` | 保存 / 恢复会话（退出重进自动恢复 `default`；网关会话自动存） |
+| `/sessions` | 列出已保存会话 |
+| `/status` | 状态（模型/会话轮数/上下文用量/工具数） |
+| `/usage` | 上下文用量条 |
+| `/new` | 新会话（旧的自动存快照） |
+| `/cron …` | 定时任务（list/add/rm/on/off/run/tick） |
 | `/clear` | 清空对话上下文 |
 | `/quit` `/exit` | 退出 |
+
+输入框下方常驻状态条（OpenClaw 式）：`● idle  模型  turns:N  ctx:%  tok≈  tools:N skills:M`，
+idle/running/error 变色；回答 token 级流式输出（卡顿时立刻能看见）；工具调用显示为单行 `⚙ 名 → ✓ 摘要`（失败红色 `✗`），长输出自动截断。
+非 UTF-8 终端（或管道）符号自动降级 ASCII，不会乱码崩溃。
+
+### `cron`
+```
+uiu cron add 早报 "30m" "搜今天的 AI 新闻并摘要"   # 间隔：30m/2h/1d
+uiu cron add 晨会 "daily 09:00" "汇总微信未读"      # 每天 09:00
+uiu cron add x "30 8 * * *" "任务"                # cron 表达式（分 时）
+uiu cron add once "once 2026-09-05T10:00:00" "任务"  # 单次
+uiu cron list / run <名> / tick / on|off|remove <名>
+```
+
+输出进 `workspace/cron/output/<id>/<时间>.md`；`uiu serve` 每 60s 自动 tick。
+
+### `sessions`
+
+```
+uiu sessions list              # 已保存会话（含网关的 gw-*）
+uiu sessions show <名>         # 看最近 20 轮
+uiu sessions remove <名>
+```
 
 ## 怎么变成"你的 agent"
 
@@ -355,6 +409,8 @@ uiu version
 4. **加 skill**：`workspace/skills/<name>/SKILL.md`
    - 简单 skill：声明 `exec: <内置名>`（如 `exec: echo`），再用 ```tool_schema 块声明参数。
    - 复杂 skill：在 `src/uiu/skills_runtime.py` 里注册 Python 函数当 builtin。
+5. **改 agent 名字**：两处可改（TUI 顶栏/状态条/`/status` 即时显示）——
+   `workspace/IDENTITY.md` 里 `## 名字` 一行，或 `uiu config --agent-name 小刃`（config 优先）。
 5. **加 channel**：`uiu channel add <name> --type telegram`
    然后 `uiu config --set-secret TELEGRAM_BOT_TOKEN=<botfather 给你的 token>`
 
@@ -375,19 +431,33 @@ uiu/
 ├── pyproject.toml
 ├── README.md
 ├── .env.example
-├── src/uiu/                       # 代码（~1100 行）
+├── src/uiu/                       # 代码（~7000 行，33 模块）
 │   ├── main.py                        # CLI 入口（argparse subparsers）
-│   ├── commands.py                    # 8 个子命令实现
+│   ├── commands.py                    # 子命令实现（init/show/model/config/skills/channel/serve/update/publish/plugins）
 │   ├── config.py                      # config.yaml + .env 读写
-│   ├── channels.py                    # channel adapter（Telegram getMe）
+│   ├── channels*.py                   # channel adapter（telegram/feishu/wecom/dingtalk/discord/slack）
+│   ├── gateway.py                     # serve 网关（多 channel 并行 + webhook server）
 │   ├── workspace.py                   # SOUL/skills/memory 加载
 │   ├── llm.py                         # OpenAI 兼容客户端
-│   ├── tools.py                       # 3 个内置工具 + registry
+│   ├── tools.py                       # 基础 4 工具 + 注册表（含沙箱）
+│   ├── _sandbox.py                    # 路径沙箱 + 命令护栏（LLM 可达工具共用）
 │   ├── skills_runtime.py              # skill 执行器
+│   ├── learning.py                    # 自学习工具（memory_add/recall/replace/skill_create/improve）
+│   ├── memory_rag.py                  # 向量记忆（chromadb，可选依赖）
+│   ├── screen_tools.py                # OCR 屏幕操作
+│   ├── desktop_tools.py               # Windows 桌面控制
+│   ├── system_tools.py                # 系统管理
+│   ├── wechat_tools.py                # 微信 UI 自动发送
+│   ├── ime_tools.py                   # 输入法检测/切换
+│   ├── agent_tools.py                 # 外部 agent 委派（claude/codex）
+│   ├── askui_tools.py / browser_tools.py  # 视觉桌面 / AI 浏览器（可选依赖）
+│   ├── voice_tools.py                 # TTS/STT（可选依赖）
+│   ├── mcp_client.py / mcp_tools.py   # MCP 桥接（可选依赖）
 │   ├── agent.py                       # 对话 + 工具调用循环
 │   ├── tui.py                         # Rich + prompt_toolkit
+│   ├── _default_workspace/            # init 模板（SOUL/IDENTITY/USER/MEMORY/skills/echo，随包分发）
 │   └── _default_skills/say_hello/     # update skills 同步的内容
-│       └── SKILL.md
+├── tests/                             # pytest（沙箱/网关/配置/工作区单元测试）
 └── workspace/                         # 你的 IP 在这里
     ├── config.yaml
     ├── .env
@@ -402,16 +472,24 @@ uiu/
 
 ## 和 Hermes 的关系
 
-Hermes Agent 全量 10000+ 文件、cli.py 单文件 1MB。本骨架是其"工作区模式"的精简：
-- ✅ 保留了：SOUL/IDENTITY/USER/MEMORY 分层、SKILL.md 渐进披露、内置工具 + 插件工具并行、对话循环。
-- ❌ 砍掉了：多平台 gateway、cron、subagent 派发、训练数据生成、ACP/MCP 协议、桌面应用、UI 前端。
+Hermes Agent 全量庞大（cli 单文件可达 MB 级）。本骨架是其"工作区模式"的精简实现：
+- ✅ 保留了：SOUL/IDENTITY/USER/MEMORY 分层、SKILL.md 渐进披露、内置工具 + MCP 动态工具、自学习 loop、多 channel 网关（telegram/feishu/wecom/dingtalk/discord/slack）、桌面/OCR 自动化。
+- ❌ 没做的：cron 定时任务、subagent 派发、训练数据生成、桌面 Electron 应用。
 
-需要哪块再补，不预加载。
+需要哪块再补，不预加载；重依赖（CV/浏览器/RAG/语音/MCP）全部做成 `pip install uiu[xxx]` 可选安装。
 
 ## 验证
 
-仓库自带 `cli_smoke.py`（22 个测试用例覆盖全部子命令，不需要真 LLM/网络）：
+冒烟（22 个用例覆盖全部子命令，不需要真 LLM/网络）：
 ```
-.venv\Scripts\python.exe cli_smoke.py
+.\.venv\Scripts\python.exe cli_smoke.py
 # === 22/22 passed ===
 ```
+
+单元测试（沙箱拦截/网关边界/配置容错/工作区加载，不需要真 LLM/网络）：
+```
+.\.venv\Scripts\python.exe -m pytest tests/ -q
+```
+
+`smoke_test.py` 是 legacy 冒烟（同样不需要 LLM），`test_send.py` 是真发微信的手动脚本（不进 CI）。
+CI（`.github/workflows/ci.yml`）：`compileall` + `pytest` + `cli_smoke.py`。

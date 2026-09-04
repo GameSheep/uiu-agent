@@ -32,6 +32,10 @@ def _workspace(args) -> Path:
     ws_arg = getattr(args, "workspace", None) or os.environ.get("UIU_WORKSPACE")
     if ws_arg:
         return Path(ws_arg).expanduser()
+    # Default resolution: cwd/workspace > ~/workspace > ~/.uiu/workspace
+    for cand in (Path.cwd() / "workspace", Path.home() / "workspace", Path.home() / ".uiu" / "workspace"):
+        if (cand / "config.yaml").exists() or (cand / "SOUL.md").exists() or cand.is_dir():
+            return cand
     return Path.cwd() / "workspace"
 
 
@@ -66,12 +70,42 @@ def cmd_init(args) -> int:
     else:
         _print_ok(f"workspace already exists: {ws}")
 
+    # Browser Use 的 Playwright 浏览器改为后台静默安装（不阻塞 init），失败不影响使用
+    _setup_playwright_browsers_async()
+
     if not parse_env_file(ws / ".env").get("OPENAI_API_KEY"):
         print()
         print("next: edit your API key in one of two ways")
         print(f"  1) edit {ws / '.env'} directly")
         print(f"  2) uiu config --api-key sk-xxx")
     return 0
+
+
+def _setup_playwright_browsers_async() -> None:
+    """Kick off Playwright Chromium install in the background (non-blocking)."""
+    try:
+        import playwright  # noqa: F401
+    except ImportError:
+        return
+    import threading
+    print("· 后台安装 Playwright Chromium（不阻塞，可继续使用）…")
+    threading.Thread(target=_setup_playwright_browsers, daemon=True).start()
+
+
+def _setup_playwright_browsers() -> None:
+    """Install Playwright browsers for Browser Use (if playwright is available)."""
+    try:
+        result = subprocess.run(
+            [sys.executable, "-m", "playwright", "install", "chromium"],
+            capture_output=True, text=True, timeout=300,
+        )
+        if result.returncode == 0:
+            _print_ok("Playwright Chromium 已就绪（Browser Use 可用）")
+    except subprocess.TimeoutExpired:
+        print("  Playwright 浏览器安装超时（可稍后运行: playwright install chromium）")
+    except FileNotFoundError:
+        pass
+
 
 
 # ---------- show ----------
@@ -87,7 +121,12 @@ def cmd_show(args) -> int:
     key_env = m.api_key_env or (prof.api_key_env if prof else "")
     print(f"workspace:  {ws}")
     print(f"config:     {config_yaml_path(ws)}")
-    print(f"agent_name: {cfg.agent_name}")
+    try:
+        from .config import resolve_agent_name as _resolve_name
+        from .workspace import load_workspace as _load_ws
+        print(f"agent:      {_resolve_name(cfg, _load_ws(ws))}  (config --agent-name 或 IDENTITY.md ## 名字)")
+    except Exception:
+        print(f"agent_name: {cfg.agent_name}")
     print()
     print("model:")
     print(f"  provider:    {m.provider}")
@@ -147,10 +186,12 @@ def cmd_model(args) -> int:
         changed = True
     if args.set_api_key:
         # write key into .env under the model's api_key_env
+        key = _resolve_key_env(ws, cfg)
         env_path = ws / ".env"
         existing = parse_env_file(env_path)
-        existing[m.api_key_env] = args.set_api_key
+        existing[key] = args.set_api_key
         write_env_file(env_path, existing)
+        os.environ[key] = args.set_api_key
         _print_ok(f"wrote key to {env_path}")
         return 0
 
@@ -248,6 +289,7 @@ def _model_wizard(ws: Path, cfg: AppConfig) -> int:
                 existing = parse_env_file(env_path)
                 existing[env_name] = key_input
                 write_env_file(env_path, existing)
+                os.environ[env_name] = key_input  # 立即加载到当前进程
                 _print_ok(f"已写入 {env_name}")
         else:
             print(f"\n{env_name} 已设置（{current[:6]}…），如需更换输入新 key:")
@@ -257,6 +299,7 @@ def _model_wizard(ws: Path, cfg: AppConfig) -> int:
                 existing = parse_env_file(env_path)
                 existing[env_name] = key_input
                 write_env_file(env_path, existing)
+                os.environ[env_name] = key_input  # 立即加载到当前进程
                 _print_ok(f"已更新 {env_name}")
 
     # step 3: test connection
@@ -277,7 +320,8 @@ def _test_model_connection(ws: Path, cfg: AppConfig) -> int:
         _print_err("base_url 未设置，跳过测试")
         return 0
     if not key and not (profile and profile.auth_type == "none"):
-        _print_err(f"{m.api_key_env} 未设置，跳过测试")
+        _print_err(f"{m.api_key_env or 'API key'} 未设置，跳过测试")
+        print(f"  → 运行: uiu config --api-key sk-xxx   （或 uiu model 重新选择）")
         return 0
     print(f"· 测试 {m.provider} / {m.model} @ {base_url} …")
     try:
@@ -292,24 +336,66 @@ def _test_model_connection(ws: Path, cfg: AppConfig) -> int:
         _print_ok(f"连接成功！模型回复: {reply[:60]}")
         return 0
     except Exception as e:
-        _print_err(f"连接失败: {type(e).__name__}: {e}")
-        print("  检查 base_url / key / 网络，然后重新运行: uiu model")
+        # friendly classification of common failures
+        err_type = type(e).__name__
+        hint = ""
+        msg = str(e)
+        if "401" in msg or "AuthenticationError" in err_type or "invalid_api_key" in msg.lower():
+            hint = "\n  → API key 无效或被拒绝。运行: uiu config --api-key 新key\n    或换 provider: uiu model"
+        elif "404" in msg or "ModelNotFoundError" in err_type:
+            hint = f"\n  → 模型 '{m.model}' 不存在或无权访问。运行: uiu model --set-model 其他模型"
+        elif "timeout" in msg.lower() or "timed out" in msg.lower():
+            hint = "\n  → 连接超时。检查 base_url 和网络:\n    uiu model --set-base-url https://xxx/v1"
+        elif "Connection" in err_type or "APIConnectionError" in err_type:
+            hint = "\n  → 无法连接服务器。检查网络或 base_url:\n    uiu model --set-base-url https://xxx/v1"
+        _print_err(f"连接失败: {err_type}: {msg[:120]}")
+        if hint:
+            print(hint)
+        else:
+            print("\n  可尝试: uiu model --set-base-url <服务地址> 或 uiu model 重新选择 provider")
         return 1
 
 
 # ---------- config (secrets + workspace) ----------
 
+def _resolve_key_env(ws: Path, cfg) -> str:
+    """Determine the env var name for the API key.
+
+    Order: model.api_key_env > provider profile's api_key_env > OPENAI_API_KEY.
+    """
+    key = (cfg.model.api_key_env or "").strip()
+    if key:
+        return key
+    try:
+        from .providers import get_profile, load_builtin_profiles
+        load_builtin_profiles()
+        prof = get_profile(cfg.model.provider)
+        if prof and prof.api_key_env:
+            return prof.api_key_env
+    except Exception:
+        pass
+    return "OPENAI_API_KEY"
+
+
 def cmd_config(args) -> int:
     ws = _workspace(args)
 
-    if args.api_key:
-        # route to .env using model's api_key_env key
+    if getattr(args, "agent_name", ""):
         cfg = load_config(ws)
-        key = cfg.model.api_key_env
+        cfg.agent_name = args.agent_name.strip()[:32]
+        save_config(ws, cfg)
+        _print_ok(f"agent 名字改为 {cfg.agent_name}（TUI 里即时生效）")
+        return 0
+
+    if args.api_key:
+        # route to .env using model's api_key_env key (with sensible fallback)
+        cfg = load_config(ws)
+        key = _resolve_key_env(ws, cfg)
         env_path = ws / ".env"
         existing = parse_env_file(env_path)
         existing[key] = args.api_key
         write_env_file(env_path, existing)
+        os.environ[key] = args.api_key  # 立即生效
         _print_ok(f"wrote {key} to {env_path}")
         return 0
 
@@ -322,6 +408,7 @@ def cmd_config(args) -> int:
         existing = parse_env_file(env_path)
         existing[key.strip()] = value
         write_env_file(env_path, existing)
+        os.environ[key.strip()] = value  # 立即生效
         _print_ok(f"set {key.strip()} in {env_path}")
         return 0
 
@@ -330,7 +417,9 @@ def cmd_config(args) -> int:
         existing = parse_env_file(env_path)
         if args.unset_secret in existing:
             del existing[args.unset_secret]
-            write_env_file(env_path, existing)
+            # overwrite=True so removed keys stay removed (write_env_file merges otherwise)
+            write_env_file(env_path, existing, overwrite=True)
+            os.environ.pop(args.unset_secret, None)
             _print_ok(f"unset {args.unset_secret}")
         return 0
 
@@ -341,7 +430,7 @@ def cmd_config(args) -> int:
             print(f"  {k} = {shown}")
         return 0
 
-    print("usage: uiu config [--api-key KEY | --set-secret K=V | --unset-secret K | --list]")
+    print("usage: uiu config [--api-key KEY | --set-secret K=V | --unset-secret K | --list | --agent-name NAME]")
     return 2
 
 
@@ -389,14 +478,15 @@ def cmd_skills(args) -> int:
         return 0
 
     if args.action == "reload":
-        # clear in-memory skill cache so next load picks up disk changes
+        # 真重载：重新掃磁盘 skills 并计数（下次对话 load_workspace 本来就会读盘，
+        # 这里提前验证，坏文件立刻报错而不是拖死下次启动）
         try:
-            import uiu.workspace as ws_mod
-            # no cache to clear — skills are loaded fresh on each load_workspace call
-            pass
-        except Exception:
-            pass
-        print("[ok] skills 已重新加载（下次对话生效）")
+            from .workspace import load_workspace as _load_ws
+            ws_obj = _load_ws(ws)
+            print(f"[ok] skills 已重新加载（{len(ws_obj.skills)} 个，下次对话生效）")
+        except Exception as e:
+            _print_err(f"skills 重载失败: {type(e).__name__}: {e}")
+            return 1
         return 0
 
     if args.action == "list":
@@ -514,6 +604,15 @@ def cmd_channel(args) -> int:
         elif ctype == "slack":
             print("  Slack: uiu config --set-secret SLACK_BOT_TOKEN=xoxb-...")
             print("         并 uiu channel add 带 -o app_token=xapp-...")
+        elif ctype == "whatsapp":
+            print("  WhatsApp: uiu channel add 需带 -o phone_id=... [-o verify=...]")
+            print("          uiu config --set-secret WHATSAPP_TOKEN=...（Meta 后台配回调到 /whatsapp）")
+        elif ctype == "email":
+            print("  邮箱: uiu channel add 需带 -o imap=... -o smtp=... -o user=...")
+            print("        uiu config --set-secret EMAIL_PASSWORD=...（建议用应用专用密码）")
+        elif ctype == "webhook":
+            print("  通用 webhook: 可带 -o secret=... -o chat_field=user.id -o text_field=message")
+            print("          外部系统 POST 到 http://0.0.0.0:8765/generic/<name>")
         print("  启用: uiu channel enable", name)
         print("  启动网关: uiu serve")
         return 0
@@ -565,6 +664,8 @@ def _default_secret_env(ctype: str) -> str:
         "discord": "DISCORD_BOT_TOKEN",
         "slack": "SLACK_BOT_TOKEN",
         "whatsapp": "WHATSAPP_TOKEN",
+        "email": "EMAIL_PASSWORD",
+        "webhook": "WEBHOOK_SECRET",
     }.get(ctype, f"{ctype.upper()}_TOKEN")
 
 
@@ -791,3 +892,107 @@ def cmd_publish(args) -> int:
     else:
         print("  done! try: pip install uiu   or   pipx run uiu")
     return 0
+
+
+# ---------- cron ----------
+
+def cmd_cron(args) -> int:
+    from . import cron as _cron
+    ws = _workspace(args)
+    action = args.action
+
+    if action == "list":
+        jobs = _cron.load_jobs(ws)
+        if not jobs:
+            print("(no cron jobs)")
+            print("  add: uiu cron add <name> <30m|2h|daily 09:00> \"<task>\"")
+            return 0
+        import time as _t
+        for j in jobs:
+            nxt = _t.strftime("%m-%d %H:%M", _t.localtime(j["next_run"])) if j.get("next_run") else "-"
+            flag = "on" if j.get("enabled") else "off"
+            print(f"  {j['name']:<20} [{flag}] {j['schedule']:<16} 下次{nxt}  id={j['id']}")
+            print(f"    {j['task'][:100]}")
+        return 0
+
+    if action == "add":
+        try:
+            job = _cron.add_job(ws, args.name, args.schedule, args.task)
+        except ValueError as e:
+            _print_err(str(e))
+            return 2
+        _print_ok(f"added {job['id']} ({args.name} @ {args.schedule})")
+        print("  serve 运行时每 60s 自动 tick；手动跑: uiu cron tick")
+        return 0
+
+    if action == "remove":
+        if _cron.remove_job(ws, args.name):
+            _print_ok(f"removed {args.name}")
+            return 0
+        _print_err(f"no such job: {args.name}")
+        return 2
+
+    if action in ("enable", "disable"):
+        if _cron.set_enabled(ws, args.name, action == "enable"):
+            _print_ok(f"{action}d {args.name}")
+            return 0
+        _print_err(f"no such job: {args.name}")
+        return 2
+
+    if action == "run":
+        jobs = [j for j in _cron.load_jobs(ws) if j["id"] == args.name or j["name"] == args.name]
+        if not jobs:
+            _print_err(f"no such job: {args.name}")
+            return 2
+        out = _cron.run_job(ws, jobs[0])
+        _print_ok(f"ran → {out}")
+        return 0
+
+    if action == "tick":
+        ran = _cron.tick(ws)
+        _print_ok(f"tick: {len(ran)} job(s) ran")
+        for out in ran:
+            print(f"  {out}")
+        return 0
+
+    return 2
+
+
+# ---------- sessions ----------
+
+def cmd_sessions(args) -> int:
+    from . import sessions as _sessions
+    ws = _workspace(args)
+    action = args.action
+
+    if action == "list":
+        items = _sessions.list_sessions(ws)
+        if not items:
+            print("(no saved sessions — TUI 里 /save 存一个)")
+            return 0
+        import time as _t
+        for s in items:
+            ts = _t.strftime("%m-%d %H:%M", _t.localtime(s["updated"]))
+            print(f"  {s['id']:<24} {s['turns']:>3} 轮  {ts}")
+        return 0
+
+    if action == "show":
+        msgs = _sessions.load_session(ws, args.name)
+        if msgs is None:
+            _print_err(f"no such session: {args.name}")
+            return 2
+        for m in msgs[-20:]:
+            role = m.get("role", "?")
+            content = m.get("content", "")
+            content = content if isinstance(content, str) else "(non-text)"
+            print(f"[{role}] {content[:300]}")
+        return 0
+
+    if action == "remove":
+        if _sessions.remove_session(ws, args.name):
+            _print_ok(f"removed {args.name}")
+            return 0
+        _print_err(f"no such session: {args.name}")
+        return 2
+
+    return 2

@@ -71,10 +71,15 @@ class FeishuAdapter(BaseChannelAdapter):
     def handle_webhook(self, body: dict) -> dict:
         """Called by the HTTP server when Feishu POSTs an event.
         Returns the verification response when needed."""
+        import hmac
+        if not isinstance(body, dict):
+            return {"code": 1, "msg": "bad body"}
         if body.get("type") == "url_verification":
             return {"challenge": body.get("challenge")}
-        if self.verify_token and body.get("token") != self.verify_token:
-            return {"code": 1, "msg": "invalid token"}
+        if self.verify_token:
+            # 常量时间比较，防时序攻击；未配置 token 时由网关层 UIU_GATEWAY_TOKEN 鉴权
+            if not hmac.compare_digest(str(body.get("token", "")), self.verify_token):
+                return {"code": 1, "msg": "invalid token"}
         header = body.get("header", {})
         if header.get("event_type") != "im.message.receive_v1":
             return {"code": 0}

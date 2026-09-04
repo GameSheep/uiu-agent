@@ -54,10 +54,21 @@ def parse_identifier(identifier: str) -> dict:
 
 # ---------- fetching ----------
 
-def _http_get(url: str, timeout: int = 20) -> bytes:
+def _http_get(url: str, timeout: int = 20, max_bytes: int = 512 * 1024) -> bytes:
     req = urllib.request.Request(url, headers={"User-Agent": "uiu/0.1"})
     with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return resp.read()
+        # 防大文件 DoS：分块读，上限 512KB
+        chunks: list[bytes] = []
+        total = 0
+        while True:
+            blk = resp.read(65536)
+            if not blk:
+                break
+            total += len(blk)
+            if total > max_bytes:
+                raise ValueError(f"远程文件过大（>{max_bytes // 1024}KB），拒绝下载: {url}")
+            chunks.append(blk)
+        return b"".join(chunks)
 
 
 def _github_contents(owner: str, repo: str, path: str, branch: str) -> list[dict]:
@@ -138,6 +149,10 @@ def install_skill(identifier: str, skills_dir: Path, name_override: str = "", fo
             name = name_override or (m.group(1) if m else Path(file_path).parent.name)
 
         safe = re.sub(r"[^a-z0-9_-]", "_", name.lower()).strip("_")
+        if not safe:
+            return "[error] skill 名非法"
+        if len(content.encode("utf-8")) > 512 * 1024:
+            return f"[error] SKILL.md 过大，拒绝安装: {file_path}"
         target = skills_dir / safe
         if target.exists() and not force:
             return f"[error] 技能 '{safe}' 已存在（用 --force 覆盖）"

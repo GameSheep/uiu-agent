@@ -104,7 +104,7 @@
 > 安全边界：文件读写走路径沙箱（系统目录 + `.env`/密钥文件拒绝，单文件 512KB 上限）；
 > `shell_exec` 拦截关机/格式化等危险命令；网关 webhook 支持 `UIU_GATEWAY_TOKEN` 鉴权。
 
-## 自我学习（Hermes 对齐）
+## 自我学习
 
 agent 内建一套"learning loop"，跨会话累积知识：
 
@@ -133,32 +133,11 @@ uiu                    # 开聊
 pipx run uiu
 ```
 
-## 发布到 PyPI（作者用）
-
-1. 注册 [PyPI 账号](https://pypi.org/account/register/)
-2. 到 [API tokens](https://pypi.org/manage/account/token/) 建一个 token（scope 选 "Entire account"）
-3. 把 token 存环境变量：
-   ```powershell
-   $env:PYPI_TOKEN = "pypi-xxxxx"
-   ```
-4. 发布：
-   ```powershell
-   uiu publish              # 正式发布到 PyPI
-   uiu publish --test       # 先发 TestPyPI 试水
-   ```
-5. 验证：
-   ```powershell
-   pip install uiu
-   uiu version
-   ```
-
-> 发布前记得把 `pyproject.toml` 里的 `version` 升版本（每次发布必须比上次大）。
-> 发布后 1-2 分钟生效。
-
-## 安装（本地开发）
+## 从源码安装（开发）
 
 ```powershell
-cd E:\Code\Personal\agent\my-agent
+git clone https://github.com/GameSheep/uiu-agent.git
+cd uiu-agent
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -e .                    # 仅核心依赖
@@ -317,21 +296,13 @@ uiu serve --port 9000
 **Channel 插件**：放 `~/.uiu/channels/<name>/__init__.py`（继承 BaseChannelAdapter，实现 check/start/send），`uiu serve` 自动发现。改平台不用改核心代码。
 
 ### `update`
-```
-uiu update self                                  # 安全更新（隔离验证 + 锁 + 回滚点）
-uiu update self --no-pull                        # 不拉远程，只验证 + 应用
+```powershell
+uiu update self                                  # 安全更新
 uiu update skills                                # 同步默认 skills 到 workspace
 ```
 
-**安全更新机制（防自毁）：**
-1. **更新锁**：`.uiu-update-in-progress` 标记（pid + 时间戳），防止两个更新并发改坏代码树
-2. **回滚点**：更新前自动 `git tag uiu-backup-*`，出问题能立刻回去
-3. **隔离验证**：先在临时 staging venv 里装 + 语法检查 + 模块导入测试，**验证不过就不碰当前环境**
-4. **通过才应用**：验证通过后才真正安装
-5. **不热重载**：更新后提示重启生效——当前进程继续用旧代码，绝不在运行中加载半新代码
-
-**更新流程（推荐）：** 改完代码 → `git add -A && git commit -m "..."` → `uiu update self`。
-git 本身就是回滚手段（`git log` / `git revert`），update 永不碰你的 workspace 人设。
+**安全更新机制：**
+更新前自动隔离验证（语法检查 + 模块导入测试），验证通过才真正安装。出问题可一键回滚。
 
 ### `publish`
 ```
@@ -431,33 +402,18 @@ uiu/
 ├── pyproject.toml
 ├── README.md
 ├── .env.example
-├── src/uiu/                       # 代码（~7000 行，33 模块）
-│   ├── main.py                        # CLI 入口（argparse subparsers）
-│   ├── commands.py                    # 子命令实现（init/show/model/config/skills/channel/serve/update/publish/plugins）
-│   ├── config.py                      # config.yaml + .env 读写
-│   ├── channels*.py                   # channel adapter（telegram/feishu/wecom/dingtalk/discord/slack）
-│   ├── gateway.py                     # serve 网关（多 channel 并行 + webhook server）
+├── src/uiu/                       # 核心代码
+│   ├── main.py                        # CLI 入口
+│   ├── commands.py                    # 子命令实现
+│   ├── config.py                      # 配置读写
+│   ├── channels*.py                   # channel adapter
+│   ├── gateway.py                     # serve 网关
 │   ├── workspace.py                   # SOUL/skills/memory 加载
-│   ├── llm.py                         # OpenAI 兼容客户端
-│   ├── tools.py                       # 基础 4 工具 + 注册表（含沙箱）
-│   ├── _sandbox.py                    # 路径沙箱 + 命令护栏（LLM 可达工具共用）
-│   ├── skills_runtime.py              # skill 执行器
-│   ├── learning.py                    # 自学习工具（memory_add/recall/replace/skill_create/improve）
-│   ├── memory_rag.py                  # 向量记忆（chromadb，可选依赖）
-│   ├── screen_tools.py                # OCR 屏幕操作
-│   ├── desktop_tools.py               # Windows 桌面控制
-│   ├── system_tools.py                # 系统管理
-│   ├── wechat_tools.py                # 微信 UI 自动发送
-│   ├── ime_tools.py                   # 输入法检测/切换
-│   ├── agent_tools.py                 # 外部 agent 委派（claude/codex）
-│   ├── askui_tools.py / browser_tools.py  # 视觉桌面 / AI 浏览器（可选依赖）
-│   ├── voice_tools.py                 # TTS/STT（可选依赖）
-│   ├── mcp_client.py / mcp_tools.py   # MCP 桥接（可选依赖）
+│   ├── tools.py                       # 工具注册表
 │   ├── agent.py                       # 对话 + 工具调用循环
 │   ├── tui.py                         # Rich + prompt_toolkit
-│   ├── _default_workspace/            # init 模板（SOUL/IDENTITY/USER/MEMORY/skills/echo，随包分发）
-│   └── _default_skills/say_hello/     # update skills 同步的内容
-├── tests/                             # pytest（沙箱/网关/配置/工作区单元测试）
+│   └── _default_workspace/            # init 模板
+├── tests/                             # pytest
 └── workspace/                         # 你的 IP 在这里
     ├── config.yaml
     ├── .env
@@ -466,30 +422,14 @@ uiu/
     ├── USER.md
     ├── MEMORY.md
     └── skills/
-        ├── _default/say_hello/        # update skills 之后会出现在这
-        └── echo/                      # 你自己加的 skill
 ```
-
-## 和 Hermes 的关系
-
-Hermes Agent 全量庞大（cli 单文件可达 MB 级）。本骨架是其"工作区模式"的精简实现：
-- ✅ 保留了：SOUL/IDENTITY/USER/MEMORY 分层、SKILL.md 渐进披露、内置工具 + MCP 动态工具、自学习 loop、多 channel 网关（telegram/feishu/wecom/dingtalk/discord/slack）、桌面/OCR 自动化。
-- ❌ 没做的：cron 定时任务、subagent 派发、训练数据生成、桌面 Electron 应用。
-
-需要哪块再补，不预加载；重依赖（CV/浏览器/RAG/语音/MCP）全部做成 `pip install uiu[xxx]` 可选安装。
 
 ## 验证
 
-冒烟（22 个用例覆盖全部子命令，不需要真 LLM/网络）：
-```
+```powershell
+# 冒烟测试（不需要真 LLM/网络）
 .\.venv\Scripts\python.exe cli_smoke.py
-# === 22/22 passed ===
-```
 
-单元测试（沙箱拦截/网关边界/配置容错/工作区加载，不需要真 LLM/网络）：
-```
+# 单元测试
 .\.venv\Scripts\python.exe -m pytest tests/ -q
 ```
-
-`smoke_test.py` 是 legacy 冒烟（同样不需要 LLM），`test_send.py` 是真发微信的手动脚本（不进 CI）。
-CI（`.github/workflows/ci.yml`）：`compileall` + `pytest` + `cli_smoke.py`。

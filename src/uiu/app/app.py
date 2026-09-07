@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import time
-from pathlib import Path
 from typing import Any, Callable
 
 from textual.app import App, ComposeResult
@@ -14,7 +12,7 @@ from textual.widgets import Button, Input, Label, ListItem, ListView, Markdown, 
 
 from .. import __version__ as _VERSION
 from .. import tools as _tools
-from ..workspace import Workspace, load_workspace
+from ..workspace import Workspace
 
 from .agent_worker import agent_turn
 from .clarify_bridge import AskUser, ClarifyBridge
@@ -285,7 +283,6 @@ class UiuApp(App[None]):
         self._turn_count = 0
         self._bridge = ClarifyBridge(self.post_message)
         self._sessions = None
-        self._pending_tool_name = ""
         self._turn_runner = turn_runner if turn_runner is not None else agent_turn
         self._worker = None
 

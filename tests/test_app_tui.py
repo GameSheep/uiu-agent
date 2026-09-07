@@ -253,3 +253,36 @@ async def _impl_help_modal(tmp_path):
         await pilot.press("escape")
         await pilot.pause(0.4)
         assert len(app.screen_stack) == 1
+
+
+
+def test_sensitive_tool_shows_confirm_modal(tmp_path):
+    """macro_play (sensitive) triggers an inline confirm modal; picking yes proceeds."""
+    return _run(_impl_confirm(tmp_path))
+
+
+async def _impl_confirm(tmp_path):
+    from uiu.app.messages import TurnDone
+
+    ws = make_ws(tmp_path)
+
+    def fake_turn(*, client, messages, tool_schemas, skills, model, cfg,
+                  emit, cancel):
+        from uiu.tools import call_tool
+        result = call_tool("macro_play", '{"name":"x"}')
+        emit(TurnDone("done " + result, 0.1))
+
+    app = UiuApp(_Stub(), ws, model="m", cfg=None, app_cfg=None,
+                 turn_runner=fake_turn)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause(0.2)
+        composer = app.query_one("#composer", Composer)
+        composer.focus_input()
+        await pilot.press("x")
+        await pilot.press("enter")
+        await pilot.pause(1.0)
+        assert len(app.screen_stack) == 2, "confirm modal should be pushed"
+        # pick option 1 (yes)
+        await pilot.press("1")
+        await pilot.pause(1.0)
+        assert len(app.screen_stack) == 1, "modal should dismiss after answer"

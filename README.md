@@ -5,7 +5,7 @@
 ## 它能做什么
 
 - 跟你多轮对话，记住上下文（同一会话内；`/save` 可跨会话 resume）。
-- 自动调用 63 个内置工具（文件/shell/后台进程/屏幕 OCR/桌面控制/系统/微信/输入法/子 agent 派发/联网搜索/浏览器/MCP 动态工具…）。
+- 自动调用 68 个内置工具（文件/shell/后台进程/屏幕 OCR/桌面控制/宏录制回放/系统/微信/输入法/子 agent 派发/联网搜索/浏览器/MCP 动态工具…）。
 - skill 渐进披露：system prompt 只带索引，用 `skills_list` / `skill_view` 按需取全文。
 - `cron` 定时任务：到点自动跑 agent 并落盘（`uiu serve` 内每 60s tick）。
 - 不确定就反问：`clarify` 工具阻塞等你回答再干活。
@@ -79,14 +79,39 @@
 | `open_url` | 浏览器打开网址或搜索 |
 | `take_screenshot` | 截屏存桌面 |
 
-## 工具全景（62 个，17 组）
+## 宏录制回放（按键精灵式，AI 可生成宏）
+
+```
+"帮我把这个操作录成宏"          → agent 调 macro_record（F9 结束）
+"跑一下填表宏"                   → agent 调 macro_play（执行前确认）
+"写个宏：每 5 分钟点一次刷新"    → agent 直接生成宏 JSON 文件再回放
+```
+
+**把重复性 GUI 劳动变成可复用宏**：录制一次人工操作（点击/按键/滚轮），之后随时一键回放。
+区别于按键精灵的地方：宏是 `workspace/macros/<name>.json` 纯文本——**AI 可以直接读写生成宏**，
+你说需求它就写出步骤序列，再自动执行。
+
+| 工具 | 干嘛 |
+|---|---|
+| `macro_record` | 录制宏（F9 停止；只记点击/按键/滚轮 + 间隔，不记鼠标轨迹） |
+| `macro_play` | 回放宏（甩鼠标到左上角或按 F9 可紧急中止） |
+| `macro_list` | 列出宏 |
+| `macro_remove` | 删除宏 |
+
+CLI：`uiu macro record 填表 --desc "登录后填表"` / `uiu macro play 填表 --speed 2` / `uiu macro list`。
+
+宏文件可直接编辑或由 AI 生成（步骤类型：click/key/type/wait/scroll/hotkey，各带 `delay_before` 间隔）。
+
+## 工具全景（68 个，19 组）
 
 | 类 | 工具 |
 |---|---|
 | 基础 | shell_exec / read_file / write_file / read_spreadsheet |
 | 后台进程 | proc_run / proc_log / proc_kill / list_procs（耗时命令不阻塞） |
-| 自学习 | memory_add / memory_recall / memory_replace / skill_create / skill_improve |
+| 自学习 | memory_add / memory_recall / memory_replace / memory_remove / skill_create / skill_improve |
 | skill 索引 | skills_list / skill_view（渐进披露，按需取全文） |
+| 会话检索 | session_search（跨已存会话关键词检索，零 token 秒回） |
+| 宏录制 | macro_record / macro_play / macro_list / macro_remove（按键精灵式，AI 可生成宏） |
 | 澄清 | clarify（反问用户并阻塞等回答） |
 | 屏幕 OCR | click_text / screen_read_text / type_text / press_key / ocr_region / click_in_region |
 | 桌面 | window_list / window_focus / app_launch / screen_ocr_find / mouse_click_at / mouse_scroll_at / text_paste / keyboard_shortcut |
@@ -99,7 +124,7 @@
 | 视觉桌面 | look / askui_autopilot（需 `pip install uiu[desktop]` + 模型 key） |
 | 语音 | speak / listen / voice_state（需 `pip install uiu[voice]`；STT 另需 whisper 相关包） |
 | 向量记忆 | add_memory / auto_embed / recall_semantic / memory_state（需 `pip install uiu[rag]`，拖 torch ~2GB） |
-| MCP | 连上 MCP server 后动态注入（`mcp_*`），需 `pip install uiu[mcp]` |
+| MCP | 配置 `mcp_servers` 后启动自动连接并注入（`mcp_*`），需 `pip install uiu[mcp]` |
 
 > 安全边界：文件读写走路径沙箱（系统目录 + `.env`/密钥文件拒绝，单文件 512KB 上限）；
 > `shell_exec` 拦截关机/格式化等危险命令；网关 webhook 支持 `UIU_GATEWAY_TOKEN` 鉴权。
@@ -111,27 +136,34 @@ agent 内建一套"learning loop"，跨会话累积知识：
 | 工具 | 干嘛 | 触发时机 |
 |---|---|---|
 | `memory_add` | 追加一条记忆（带时间戳） | 用户透露持久偏好/事实时主动记 |
-| `memory_recall` | 读回长期记忆 | 需要跨会话知识时 |
-| `memory_replace` | 更新已有记忆 | 信息过时 |
+| `memory_recall` | 读回长期记忆（含用量表） | 需要跨会话知识时 |
+| `memory_replace` | 更新已有记忆 | 信息过时 / 记忆库超预算需合并 |
+| `memory_remove` | 删除某条记忆 | 记忆作废 |
 | `skill_create` | 把成功方法沉淀成 SKILL.md | 发现可复用流程时 |
 | `skill_improve` | 改进已有技能（追加使用记录） | 发现更优做法时 |
 
+- **记忆有界（3000 字符）**：system prompt 带用量表；超 80% 时 `memory_add` 拒绝写入，
+  先 `memory_recall` 看全量 + `memory_replace` 合并同类——记忆永远是精炼的 curated 文件，不会无限膨胀。
+- **会话检索**：`session_search` / `/search` 在已保存会话里做免费关键词检索（含上下文），跨会话回忆不花 token。
+- **压缩前记忆落盘**：`/compact` 把旧轮 LLM 摘要时顺带提炼 `[MEMORY]` 段写入记忆库，旧轮存档为 `auto-compact-*` 会话。
 - **周期 nudge**：每 5 轮对话自动提示 agent"这段有什么值得沉淀的"
+- **频率感知建议（Hermes /suggestions usage 来源）**：回放 ≥3 次的宏、会话里重复出现的请求主题，
+  由 `/suggestions` 建议自动化（宏→定时任务、主题→沉淀宏/skill），accept/dismiss 人工确认，绝不自动创建
 - **跨会话**：记忆和技能都落盘在 workspace，下次启动还在
 - 写进了 SOUL.md 人设：agent 知道该主动学，不用你提醒
 
-## 安装（发布后）
+## 安装
 
 ```bash
-pip install uiu        # 安装
-uiu init               # 首次初始化 workspace
-uiu                    # 开聊
+pip install uiu            # Python ≥3.10 直接装（Windows 主推）
+uiu                        # 第一次运行自动引导：选模型 → 填 key → 进全屏聊天界面
 ```
 
-或者不装全局，直接跑：
-```bash
-pipx run uiu
-```
+也可以不装全局直接体验：`npx uiu-agent`（自动携带 Python 运行时；本轮以 PyPI 主路径为准）。
+
+> v1.0 起：首次运行不再需要手动 `uiu init` / `uiu config`——
+> `uiu` 会自动初始化 workspace（默认 `~/.uiu/workspace`）、弹欢迎向导帮你配好模型，
+> 并通过连通性测试后才进入对话。旧工作流（`uiu init` / `uiu config` / `uiu model`）仍完全可用。
 
 ## 从源码安装（开发）
 
@@ -147,13 +179,20 @@ pip install -e ".[all]"             # 含重依赖（CV/浏览器/RAG/语音/MCP
 ## 快速上手
 
 ```powershell
-uiu init                                          # 建 workspace
-uiu config --api-key sk-xxx                       # 写 API key
-uiu model --set-model deepseek-chat \             # 换模型（DeepSeek/Moonshot/Ollama 都行）
+pip install uiu           # ① 安装
+uiu                       # ② 首次运行：欢迎向导自动配置模型（DeepSeek/OpenAI/本地 Ollama…）
+                          #    配好后自动进入全屏 TUI
+
+# 已有配置的日常用法
+uiu init                                        # 手动初始化 workspace（可选）
+uiu config --api-key sk-xxx                     # 手动写 API key（可选）
+uiu model --set-model deepseek-chat            # 手动换模型
               --set-base-url https://api.deepseek.com/v1
-uiu show                                          # 看当前配置
-uiu                                               # 进 TUI 开聊
+uiu show                                        # 看当前配置
+uiu                                             # 进全屏 TUI 开聊（--no-tui 用经典 REPL）
 ```
+
+**TUI 常用键**：`Enter` 发送 · `Shift+Enter` 换行 · `Ctrl+N` 新会话 · `Ctrl+E` 命令面板 · `?` 帮助
 
 ## 完整 CLI 参考
 
@@ -173,6 +212,21 @@ uiu init
 ```
 uiu show
 ```
+
+### `doctor`
+诊断并修复 uiu 配置问题（OpenClaw doctor 风格；uiu 起不来时先跑它）：
+```
+uiu doctor                    # 诊断并列出问题 + 修复提示
+uiu doctor --lint             # 只读检查（不改任何东西），有 error 返回 1
+uiu doctor --fix              # 逐项确认后自动修复
+uiu doctor --fix --yes        # 全自动修复可修项
+```
+
+检查项覆盖：Python 版本 / PyYAML、workspace 完整性（人设文件）、config.yaml 可解析性与结构、
+api_mode 合法性、API key 是否存在（自动识别 ollama 等本地 provider 免 key）、
+.env 缺失与坏行、channel token 缺失、可选依赖（MCP 等）缺失。
+可自动修复：补全 workspace 文件、重置缺失/损坏的 config.yaml（坏文件先备份 `.bak`）、
+纠正非法 api_mode、创建 .env 模板——每项修复后自动重扫确认。
 
 ### `model`
 交互式切换模型（Hermes 风格）：
@@ -261,12 +315,15 @@ uiu channel add fs-main --type feishu \
 uiu channel test fs-main
 ```
 
-**企业微信**（webhook，需公网回调）：
+**企业微信**（webhook，需公网回调；自建应用消息默认走官方 AES 加密回调）：
 ```
 uiu channel add wc-main --type wecom \
-  -o corpid=wwxxx -o corpsecret=xxx -o agentid=1000002
+  -o corpid=wwxxx -o corpsecret=xxx -o agentid=1000002 \
+  -o token=<回调 Token> -o aes_key=<回调 EncodingAESKey>   # 配置后启用官方验签+AES 解密
 uiu channel test wc-main
 ```
+> 配置 `token` + `aes_key`（在企微后台"接收消息"设置里）后，`/wecom` 回调强制走官方
+> 验签与 AES 解密，伪造消息会被拒绝；不配置则退回明文转发（需网关 token 保护）。
 
 通用操作：
 ```
@@ -338,10 +395,13 @@ uiu version
 | `/skills` / `/skills reload` | 列出 / 重载 skill |
 | `/tools` | 列出内置工具 |
 | `/identity` | 打印 IDENTITY.md |
-| `/memory <内容>` | 追加一行到 MEMORY.md |
+| `/memory <内容>` | 追加一行到 MEMORY.md（有界：超 3000 字符预算拒绝并提示合并） |
 | `/soul <内容>` | 追加一行到 SOUL.md |
 | `/save [名]` / `/resume [名]` | 保存 / 恢复会话（退出重进自动恢复 `default`；网关会话自动存） |
 | `/sessions` | 列出已保存会话 |
+| `/search <关键词>` | 跨已存会话关键词检索（免费秒回，带上下文） |
+| `/compact` | 压缩旧对话：LLM 摘要 + 提炼 `[MEMORY]` 记忆落盘，旧轮存档 `auto-compact-*` |
+| `/suggestions` | 自动化建议：常用宏→定时任务、重复请求→沉淀提示（accept/dismiss 人工确认） |
 | `/status` | 状态（模型/会话轮数/上下文用量/工具数） |
 | `/usage` | 上下文用量条 |
 | `/new` | 新会话（旧的自动存快照） |
@@ -357,18 +417,22 @@ idle/running/error 变色；回答 token 级流式输出（卡顿时立刻能看
 ```
 uiu cron add 早报 "30m" "搜今天的 AI 新闻并摘要"   # 间隔：30m/2h/1d
 uiu cron add 晨会 "daily 09:00" "汇总微信未读"      # 每天 09:00
-uiu cron add x "30 8 * * *" "任务"                # cron 表达式（分 时）
+uiu cron add x "0 9 * * 1-5" "任务"                # 完整 5 段 cron（分 时 日 月 周）
+                                                   # 支持 */n、范围、列表：*/15、9-11、1-5
 uiu cron add once "once 2026-09-05T10:00:00" "任务"  # 单次
+uiu cron add 备份 "2h" "xcopy ..." --shell         # shell 任务：跑命令零 token（不调 agent）
 uiu cron list / run <名> / tick / on|off|remove <名>
 ```
 
 输出进 `workspace/cron/output/<id>/<时间>.md`；`uiu serve` 每 60s 自动 tick。
+网关/TUI 里 `/cron add 备份 2h "!xcopy ..."` 等价（任务以 `!` 开头即 shell 任务）。
 
 ### `sessions`
 
 ```
 uiu sessions list              # 已保存会话（含网关的 gw-*）
 uiu sessions show <名>         # 看最近 20 轮
+uiu sessions search <关键词>   # 跨会话关键词检索（免费秒回）
 uiu sessions remove <名>
 ```
 
@@ -382,7 +446,7 @@ uiu sessions remove <名>
    - 复杂 skill：在 `src/uiu/skills_runtime.py` 里注册 Python 函数当 builtin。
 5. **改 agent 名字**：两处可改（TUI 顶栏/状态条/`/status` 即时显示）——
    `workspace/IDENTITY.md` 里 `## 名字` 一行，或 `uiu config --agent-name 小刃`（config 优先）。
-5. **加 channel**：`uiu channel add <name> --type telegram`
+6. **加 channel**：`uiu channel add <name> --type telegram`
    然后 `uiu config --set-secret TELEGRAM_BOT_TOKEN=<botfather 给你的 token>`
 
 ## 配置存储
@@ -401,19 +465,22 @@ uiu sessions remove <名>
 uiu/
 ├── pyproject.toml
 ├── README.md
+├── DEVELOPMENT.md               # 完成度评审 + 对标差距 + 路线图
+├── cli_smoke.py                  # 离线冒烟（CI 同款）
 ├── .env.example
 ├── src/uiu/                       # 核心代码
 │   ├── main.py                        # CLI 入口
 │   ├── commands.py                    # 子命令实现
 │   ├── config.py                      # 配置读写
 │   ├── channels*.py                   # channel adapter
+│   ├── wecom_crypto.py                # 企微回调 AES 解密/验签
 │   ├── gateway.py                     # serve 网关
 │   ├── workspace.py                   # SOUL/skills/memory 加载
 │   ├── tools.py                       # 工具注册表
 │   ├── agent.py                       # 对话 + 工具调用循环
 │   ├── tui.py                         # Rich + prompt_toolkit
 │   └── _default_workspace/            # init 模板
-├── tests/                             # pytest
+├── tests/                             # pytest（130+ 用例）
 └── workspace/                         # 你的 IP 在这里
     ├── config.yaml
     ├── .env

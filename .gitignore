@@ -5,6 +5,7 @@ __pycache__/
 .eggs/
 build/
 dist/
+dist_verify/
 
 # venv
 .venv/
@@ -19,7 +20,6 @@ workspace/.env
 workspace/logs/
 *.log
 smoke_test.py
-cli_smoke.py
 result.txt
 smoke.txt
 _test_workspace/

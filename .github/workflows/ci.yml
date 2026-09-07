@@ -23,5 +23,10 @@ jobs:
       - name: Unit tests (no LLM / network)
         run: python -m pytest tests/ -q
 
-      - name: CLI smoke (22 cases, isolated workspace)
+      - name: CLI smoke (offline, isolated workspace)
         run: python cli_smoke.py
+
+      - name: Windows install-state acceptance (build wheel -> fresh venv -> smoke)
+        shell: pwsh
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify_windows_install.ps1

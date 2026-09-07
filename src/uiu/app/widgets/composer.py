@@ -137,6 +137,12 @@ class Composer(Vertical):
         if self._busy:
             return
         event.stop()
+        # Enter with the slash menu open confirms the highlighted completion
+        if self._menu.is_visible_menu():
+            word = self._menu.selected_word()
+            if word:
+                self.accept_completion(word)
+            return
         self.post_message(self.Submitted(event.text))
 
     async def on_send_area_esc_pressed(self, event: SendArea.EscPressed) -> None:
@@ -187,7 +193,12 @@ class Composer(Vertical):
         self._menu.hide()
 
     async def on_text_area_changed(self, event: Any) -> None:
-        if self._menu.is_visible_menu() and not self._should_show_menu():
+        """Drive the slash menu live as the user types (Changed bubbles up)."""
+        if self._busy:
+            return
+        if self._should_show_menu():
+            await self._menu.refresh_items(self._input.text)
+        elif self._menu.is_visible_menu():
             self._menu.hide()
 
     def set_busy(self, busy: bool) -> None:

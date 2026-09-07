@@ -122,8 +122,12 @@ async def _impl_slash_dispatch_runs(tmp_path):
         composer = app.query_one("#composer", Composer)
         composer.focus_input()
         # /sessions with no saved ones returns "(no saved sessions..."
+        # Enter while the completion menu is open confirms the highlighted
+        # completion; a second Enter actually sends the command.
         await pilot.press(*list("/sessions"))
-        await pilot.press("enter")
+        await pilot.pause(0.2)
+        await pilot.press("enter")  # confirm completion
+        await pilot.press("enter")  # send
         await pilot.pause(0.3)
         chat = app.query_one("#chat", ChatView)
         notices = [b for b in chat.query(Bubble) if b.role == "notice"]
@@ -177,3 +181,29 @@ async def _impl_tool_result_row_shown(tmp_path):
         chat = app.query_one("#chat", ChatView)
         notices = [b.get_text() for b in chat.query(Bubble) if b.role == "notice"]
         assert any("system_info" in t for t in notices), notices
+
+
+
+def test_slash_completion_menu(tmp_path):
+    """Typing "/" opens the completion menu; Enter confirms the selection."""
+    return _run(_impl_slash_completion_menu(tmp_path))
+
+
+async def _impl_slash_completion_menu(tmp_path):
+    ws = make_ws(tmp_path)
+    app = UiuApp(_Stub(), ws, model="m", cfg=None, app_cfg=None)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause(0.2)
+        composer = app.query_one("#composer", Composer)
+        composer.focus_input()
+        await pilot.press("/")
+        await pilot.pause(0.3)
+        menu = composer.query_one("#slash-menu")
+        assert menu.has_class("-visible"), "slash menu should open on /"
+        assert len(menu._items) >= 10
+        # Enter confirms the highlighted first item
+        await pilot.press("enter")
+        await pilot.pause(0.2)
+        text = composer._input.text
+        assert text.startswith("/"), text
+        assert not menu.has_class("-visible")

@@ -360,12 +360,12 @@ def call_tool(name: str, arguments_json: str, skills: list | None = None) -> str
         args = json.loads(arguments_json) if isinstance(arguments_json, str) else arguments_json
         if not isinstance(args, dict):
             return f"[error] tool args must be a JSON object, got {type(args).__name__}"
-        # Host confirmation gate for sensitive tools (send_wechat / shutdown / macro_play).
-        from .confirm import confirm as _confirm_tool, needs_confirm as _needs_confirm
-        if _needs_confirm(name):
-            ans = _confirm_tool(name, arguments_json)
-            if ans != "yes":
-                return f"[error] 已取消：{name} 需要用户确认后才执行"
+        # Security Guardrail Interception & Host Confirmation
+        from .risk_guardrails import intercept_tool_call
+        from .confirm import _confirm as _host_confirm
+        allowed, reason = intercept_tool_call(name, args, confirm_handler=_host_confirm)
+        if not allowed:
+            return f"[error] {reason}"
         return fn(**args)
     except json.JSONDecodeError as e:
         return f"[error] invalid JSON args: {e}"

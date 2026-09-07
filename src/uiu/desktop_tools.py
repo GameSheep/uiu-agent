@@ -274,6 +274,23 @@ DESKTOP_TOOL_SCHEMAS: list[dict[str, Any]] = [
                 "required": ["target"],
             },
         },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "hierarchical_execute",
+            "description": "基于 Microsoft UFO 架构的 HostAgent + AppAgent 双层分级协同调度器：将跨软件复杂长任务自动拆解为应用子任务，自动调度 App 专家执行并汇聚成果。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "goal": {
+                        "type": "string",
+                        "description": "用户的跨应用复合长目标（例如 '把 CC Switch 备注修改为 123，然后发微信给文件传输助手通知已更新'）",
+                    },
+                },
+                "required": ["goal"],
+            },
+        },
     }
 ]
 
@@ -420,6 +437,10 @@ def dispatch_tool(name: str, args: dict[str, Any]) -> str:
                 window_title=args.get("window_title"),
             )
             return json.dumps(res, ensure_ascii=False)
+
+        elif name == "hierarchical_execute":
+            from .hierarchical_agent import hierarchical_execute
+            return hierarchical_execute(goal=args.get("goal", ""))
 
         else:
             return f"[error] 未知工具: {name}"

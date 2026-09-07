@@ -198,7 +198,7 @@ uiu                                             # 进全屏 TUI 开聊（--no-tu
 
 ### 默认行为
 ```
-uiu                          # 不带参数 → 进 TUI REPL
+uiu                          # 不带参数 → 进全屏 TUI（textual；--no-tui 回退经典 REPL）
 ```
 
 ### `init`
@@ -385,6 +385,31 @@ uiu plugins path                     # 打印插件目录（~/.uiu/plugins/model
 uiu version
 ```
 
+## 全屏 TUI（v1.0）
+
+`uiu` 默认进入 **textual 全屏聊天应用**（OpenClaw 风格），不是脚本式 REPL：
+
+```
+┌────────────────────────────────────────────────────────────┐
+│  小刃 · deepseek-chat  C:\Users\you\.uiu\workspace   tools 68 │
+├──────────────────────────────────────┬─────────────────────┤
+│  你：帮我看看磁盘                       │  （侧栏 ctrl+s 打开）  │
+│  小刃：我来查看…（流式 markdown 渲染）    │  /new /save /sessions │
+│  ⚙ system_info → ✓ 摘要（单行折叠）      │  /compact /help       │
+├──────────────────────────────────────┴─────────────────────┤
+│  输入消息…（Enter 发送 / Shift+Enter 换行）                  │
+├────────────────────────────────────────────────────────────┤
+│  ● idle  agent · model  turns:5  ctx:[███░…]  tools:68      │
+└────────────────────────────────────────────────────────────┘
+```
+
+- **消息区**：气泡式对话，回复以 markdown **流式渲染**（代码/列表/表格实时高亮）；工具调用折叠为单行 `✓/✗ 工具名 → 摘要`。
+- **多行输入**：`Enter` 发送、`Shift+Enter` 换行；输入 `/` 弹出命令补全。
+- **快捷键**：`Ctrl+N` 新会话 · `Ctrl+E` 命令面板（模糊搜所有 slash 命令）· `Ctrl+S` 侧栏 · `Ctrl+R` 历史搜索 · `Ctrl+L` 清屏 · `?` 帮助 · `Esc` 中断回复。
+- **不卡顿**：agent 回合在后台线程跑，等待回复时仍可滚动/打字/开命令面板。
+- **敏感操作内联确认**：`send_wechat` / `shutdown` / `macro_play` 触发时弹确认框，绝不静默执行。
+- 非交互终端（管道/CI）自动回退经典 REPL；显式需要旧界面用 `uiu --no-tui`。
+
 ## TUI 内置命令
 
 在 TUI 内（`uiu` 不带参数），slash 命令与网关聊天共用同一注册表：
@@ -478,9 +503,12 @@ uiu/
 │   ├── workspace.py                   # SOUL/skills/memory 加载
 │   ├── tools.py                       # 工具注册表
 │   ├── agent.py                       # 对话 + 工具调用循环
-│   ├── tui.py                         # Rich + prompt_toolkit
+│   ├── tui.py                         # 经典 REPL（降级路径，--no-tui）
+│   ├── app/                           # textual 全屏 TUI（消息区/输入区/侧栏/状态条）
+│   │   ├── app.py                     # UiuApp 主应用
+│   │   ├── widgets/                   # ChatView / Composer / SideBar / StatusBar
 │   └── _default_workspace/            # init 模板
-├── tests/                             # pytest（130+ 用例）
+├── tests/                             # pytest（200+ 用例）
 └── workspace/                         # 你的 IP 在这里
     ├── config.yaml
     ├── .env
@@ -497,6 +525,9 @@ uiu/
 # 冒烟测试（不需要真 LLM/网络）
 .\.venv\Scripts\python.exe cli_smoke.py
 
-# 单元测试
+# 单元测试（含 textual 全屏 TUI 的离线 pilot 测试）
 .\.venv\Scripts\python.exe -m pytest tests/ -q
+
+# Windows 安装态验收（构建 wheel → 全新 venv → version/init/doctor/show/TUI 冒烟）
+powershell -ExecutionPolicy Bypass -File scripts/verify_windows_install.ps1
 ```

@@ -386,8 +386,49 @@ DESKTOP_TOOL_SCHEMAS: list[dict[str, Any]] = [
                 },
             },
         },
-    }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "display_scaling_info",
+            "description": "获取多显示器几何布局、系统/监视器DPI缩放比（100%, 125%, 150%, 200%）与坐标系校准报告。",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "coordinate_anti_drift",
+            "description": "计算高精度抗漂移安全点击坐标，支持安全内边距、文本框输入优化、物理/逻辑DPI转换与归一化坐标转换。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "box": {
+                        "type": "array",
+                        "items": {"type": "integer"},
+                        "description": "元素包围盒 [x, y, w, h]",
+                    },
+                    "strategy": {
+                        "type": "string",
+                        "enum": ["center", "safe_center", "input_field", "right_action"],
+                        "description": "定位策略（默认 safe_center）",
+                        "default": "safe_center",
+                    },
+                    "is_physical": {
+                        "type": "boolean",
+                        "description": "是否为图像物理像素坐标，若为 true 则根据 DPI 自动转换为逻辑点击坐标",
+                        "default": False,
+                    },
+                },
+                "required": ["box"],
+            },
+        },
+    },
 ]
+
 
 # 将微信专用工具与通用工具整合
 ALL_TOOLS = DESKTOP_TOOL_SCHEMAS + [SEND_WECHAT_DEF]
@@ -580,8 +621,24 @@ def dispatch_tool(name: str, args: dict[str, Any]) -> str:
             )
             return json.dumps({"stable": ok, "message": "画面已静止" if ok else "等待超时，画面仍有动态变动"}, ensure_ascii=False)
 
+        elif name == "display_scaling_info":
+            from .dpi_manager import calibrate_screen_alignment
+            info = calibrate_screen_alignment()
+            return f"[ok] 显示器与 DPI 缩放诊断: {json.dumps(info, ensure_ascii=False)}"
+
+        elif name == "coordinate_anti_drift":
+            from .dpi_manager import calculate_safe_target, physical_to_logical
+            box = args.get("box", [0, 0, 10, 10])
+            strategy = args.get("strategy", "safe_center")
+            is_phys = args.get("is_physical", False)
+            tx, ty = calculate_safe_target(box, strategy=strategy)
+            if is_phys:
+                tx, ty = physical_to_logical(tx, ty)
+            return f"[ok] 抗漂移安全坐标计算完成: target=({tx}, {ty}), strategy={strategy}"
+
         else:
             return f"[error] 未知工具: {name}"
+
 
     except Exception as e:
         return f"[error] 执行工具 {name} 异常: {type(e).__name__}: {e}"

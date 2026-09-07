@@ -23,13 +23,22 @@ def _get_pyautogui():
 
 
 def mouse_click(
-    x: int,
-    y: int,
+    x: int | float,
+    y: int | float,
     button: Literal["left", "right", "middle"] = "left",
     clicks: int = 1,
     interval: float = 0.02,
-    duration: float = 0.0
+    duration: float = 0.0,
+    is_physical: bool = False,
 ) -> str:
+    from .dpi_manager import denormalize_coordinates, physical_to_logical
+    if isinstance(x, float) and 0.0 <= x <= 1.0 and isinstance(y, float) and 0.0 <= y <= 1.0:
+        x, y = denormalize_coordinates(x, y)
+    elif is_physical:
+        x, y = physical_to_logical(x, y)
+    else:
+        x, y = int(round(x)), int(round(y))
+
     ag = _get_pyautogui()
     try:
         ag.moveTo(x, y, duration=duration)
@@ -39,13 +48,22 @@ def mouse_click(
         return f"[error] 鼠标点击失败: {type(e).__name__}: {e}"
 
 
-def mouse_move(x: int, y: int, duration: float = 0.0) -> str:
+def mouse_move(x: int | float, y: int | float, duration: float = 0.0, is_physical: bool = False) -> str:
+    from .dpi_manager import denormalize_coordinates, physical_to_logical
+    if isinstance(x, float) and 0.0 <= x <= 1.0 and isinstance(y, float) and 0.0 <= y <= 1.0:
+        x, y = denormalize_coordinates(x, y)
+    elif is_physical:
+        x, y = physical_to_logical(x, y)
+    else:
+        x, y = int(round(x)), int(round(y))
+
     ag = _get_pyautogui()
     try:
         ag.moveTo(x, y, duration=duration)
         return f"[ok] 鼠标已移动至 ({x}, {y})"
     except Exception as e:
         return f"[error] 鼠标移动失败: {type(e).__name__}: {e}"
+
 
 
 def mouse_drag(

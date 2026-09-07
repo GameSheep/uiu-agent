@@ -206,6 +206,55 @@ def skill_create(name: str, description: str, instructions: str = "") -> str:
     return f"[ok] 已创建技能 {safe}（SKILL.md 已写入）"
 
 
+def record_verified_action(
+    action_name: str,
+    target_app: str,
+    steps: list[str] | str,
+    verification: str,
+    notes: str = ""
+) -> str:
+    """Decompose and persist a verified action into both skills and MEMORY.md."""
+    import re as _re
+    safe_name = _re.sub(r"[^a-z0-9_-]", "_", action_name.lower()).strip("_")
+    if not safe_name:
+        safe_name = "action_" + str(int(time.time()))
+
+    if isinstance(steps, str):
+        steps_list = [s.strip() for s in steps.splitlines() if s.strip()]
+    else:
+        steps_list = list(steps)
+
+    desc = f"{target_app} - {action_name} 操作自动化 SOP（经实机验证生效）"
+    steps_md = "\n".join(f"{i}. {s}" for i, s in enumerate(steps_list, 1))
+
+    instructions = (
+        f"### 目标应用: {target_app}\n\n"
+        f"### 拆解执行步骤 (SOP):\n{steps_md}\n\n"
+        f"### 验证方法:\n{verification}\n"
+    )
+    if notes:
+        instructions += f"\n### 关键经验与坐标规律:\n{notes}\n"
+
+    # 1. Persist skill
+    skills_dir = _skills_dir()
+    target_dir = skills_dir / safe_name
+    target_dir.mkdir(parents=True, exist_ok=True)
+    body = (
+        f"---\nname: {safe_name}\ndescription: {desc}\n---\n\n"
+        f"# {safe_name}\n\n"
+        f"## 何时使用\n{desc}\n\n"
+        f"## 做法\n{instructions.strip()}\n"
+    )
+    (target_dir / "SKILL.md").write_text(body, encoding="utf-8")
+
+    # 2. Persist to MEMORY.md
+    first_step = steps_list[0] if steps_list else ""
+    summary = f"[{target_app}] 已验证操作 '{action_name}': {first_step} 等 {len(steps_list)} 步流程，已沉淀至技能 {safe_name}"
+    mem_res = memory_add(summary)
+
+    return f"[ok] 操作 '{action_name}' 已拆解沉淀：技能 workspace/skills/{safe_name}/SKILL.md 已写入，长期记忆已同步（{mem_res}）。"
+
+
 def skill_improve(name: str, note: str = "") -> str:
     """Improve an existing skill by appending a usage note (Hermes self-improve).
 
@@ -359,6 +408,29 @@ MEMORY_REMOVE_DEF = {
     },
 }
 
+RECORD_VERIFIED_ACTION_DEF = {
+    "type": "function",
+    "function": {
+        "name": "record_verified_action",
+        "description": "当一次桌面 GUI 或系统操作真实生效并验证后，立即调用此工具将操作拆解沉淀为可复用技能与记忆（写入 SKILL.md 与 MEMORY.md）。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "action_name": {"type": "string", "description": "操作名称（如 update_cc_switch_remark）"},
+                "target_app": {"type": "string", "description": "目标应用或系统（如 CC Switch、微信、ChatGPT）"},
+                "steps": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "拆解后的操作步骤列表（含唤醒、坐标、悬浮、输入等关键要素）",
+                },
+                "verification": {"type": "string", "description": "验证方法（如 SQLite 校验、UI 文本核验）"},
+                "notes": {"type": "string", "description": "经验总结、坐标规律或注意事项", "default": ""},
+            },
+            "required": ["action_name", "target_app", "steps", "verification"],
+        },
+    },
+}
+
 
 LEARNING_TOOLS: dict[str, dict] = {
     "memory_add": {"def": MEMORY_ADD_DEF, "fn": memory_add},
@@ -367,6 +439,7 @@ LEARNING_TOOLS: dict[str, dict] = {
     "memory_remove": {"def": MEMORY_REMOVE_DEF, "fn": memory_remove},
     "skill_create": {"def": SKILL_CREATE_DEF, "fn": skill_create},
     "skill_improve": {"def": SKILL_IMPROVE_DEF, "fn": skill_improve},
+    "record_verified_action": {"def": RECORD_VERIFIED_ACTION_DEF, "fn": record_verified_action},
 }
 
 
@@ -392,7 +465,8 @@ def call_learning_tool(name: str, arguments_json: str) -> str:
 # ---------- self-improve nudge (Hermes "periodic nudges") ----------
 
 NUDGE_PROMPT = """\
-（自学习）回顾刚才的对话，判断是否有值得沉淀的东西。如果有，调用相应工具：
+（自学习）回顾刚才的对话与操作，判断是否有值得沉淀的东西。如果有，调用相应工具：
+- 真实执行了多步 GUI / 系统操作并验证成功 → record_verified_action 拆分沉淀
 - 用户透露了持久的偏好/事实 → memory_add
 - 发现了一个可复用的解决流程 → skill_create
 如果没什么可沉淀的，直接回复 "无需沉淀" 三个字，不要调用工具。

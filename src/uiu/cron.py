@@ -357,3 +357,107 @@ def tick(workspace: Path) -> list[str]:
         return ran
     finally:
         _release_lock(ws_path)
+
+
+# ---------- agent-facing cron tools ----------
+
+def _default_ws_path() -> Path:
+    from .commands import _workspace
+    class DummyArgs:
+        workspace = None
+    return _workspace(DummyArgs())
+
+
+def cron_add_job(name: str, schedule: str, task: str) -> str:
+    """Add a scheduled cron job (supports absolute ISO time like 'once 2026-09-07T18:30:00', interval '30m', 'daily 09:00', etc.)."""
+    ws = _default_ws_path()
+    try:
+        job = add_job(ws, name=name, schedule=schedule, task=task)
+        dt = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(job["next_run"]))
+        return f"[ok] 已成功创建定时任务 '{job['name']}' (ID: {job['id']})，调度规则: {job['schedule']}，下次运行时间: {dt}"
+    except Exception as e:
+        return f"[error] 创建定时任务失败: {type(e).__name__}: {e}"
+
+
+def cron_list_jobs() -> str:
+    """List all scheduled jobs in the workspace."""
+    ws = _default_ws_path()
+    jobs = load_jobs(ws)
+    if not jobs:
+        return "当前没有配置任何定时任务。"
+    lines = [f"### 定时任务列表 (共 {len(jobs)} 个):", ""]
+    for j in jobs:
+        st = "启用" if j.get("enabled", True) else "已停用"
+        nr = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(j.get("next_run", 0))) if j.get("next_run") else "-"
+        lines.append(f"- **{j.get('name')}** (ID: `{j.get('id')}`) [{st}]")
+        lines.append(f"  - 调度: `{j.get('schedule')}` | 下次运行: {nr}")
+        lines.append(f"  - 任务: {j.get('task')}")
+    return "\n".join(lines)
+
+
+def cron_remove_job(job_id: str) -> str:
+    """Remove a scheduled job by its id or name."""
+    ws = _default_ws_path()
+    jobs = load_jobs(ws)
+    target = None
+    for j in jobs:
+        if j.get("id") == job_id or j.get("name") == job_id:
+            target = j
+            break
+    if not target:
+        return f"[error] 未找到 ID 或名称为 '{job_id}' 的定时任务"
+    remove_job(ws, target["id"])
+    return f"[ok] 已成功删除定时任务 '{target.get('name')}' ({target['id']})"
+
+
+CRON_ADD_JOB_DEF = {
+    "type": "function",
+    "function": {
+        "name": "cron_add_job",
+        "description": "创建绝对定时或周期定时任务（支持绝对时间如 'once 2026-09-07T18:00:00'、每天固定时间 'daily 09:00'、间隔时间 '30m'/'2h'、5段cron表达式）。到点自动执行指定任务。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "定时任务名称"},
+                "schedule": {"type": "string", "description": "调度时间规则，如 'once 2026-09-07T18:00:00'、'daily 09:30'、'30m'、'0 9 * * 1-5'"},
+                "task": {"type": "string", "description": "到点需要执行的任务提示词/指令（例如'运行 send_email_via_gui 给 boss@company.com 发送今日报告'）"},
+            },
+            "required": ["name", "schedule", "task"],
+        },
+    },
+}
+
+CRON_LIST_JOBS_DEF = {
+    "type": "function",
+    "function": {
+        "name": "cron_list_jobs",
+        "description": "列出当前工作区中所有配置的定时任务列表与下次触发时间。",
+        "parameters": {"type": "object", "properties": {}},
+    },
+}
+
+CRON_REMOVE_JOB_DEF = {
+    "type": "function",
+    "function": {
+        "name": "cron_remove_job",
+        "description": "删除指定的定时任务（支持传入任务 ID 或任务名称）。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "job_id": {"type": "string", "description": "定时任务 ID 或名称"},
+            },
+            "required": ["job_id"],
+        },
+    },
+}
+
+CRON_TOOLS: dict[str, dict] = {
+    "cron_add_job": {"def": CRON_ADD_JOB_DEF, "fn": cron_add_job},
+    "cron_list_jobs": {"def": CRON_LIST_JOBS_DEF, "fn": cron_list_jobs},
+    "cron_remove_job": {"def": CRON_REMOVE_JOB_DEF, "fn": cron_remove_job},
+}
+
+
+def cron_tool_defs() -> list[dict]:
+    return [t["def"] for t in CRON_TOOLS.values()]
+

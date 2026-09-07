@@ -306,9 +306,138 @@ GET_TIME_DEF = {
 }
 
 
+# ---------- software inventory & updates ----------
+
+def software_inventory(filter_keyword: str = "", check_updates: bool = True, limit: int = 30) -> str:
+    """List installed software, version, and latest available version via registry & winget."""
+    import winreg
+    import subprocess
+    import re
+
+    filter_clean = (filter_keyword or "").strip().lower()
+    limit = max(1, min(int(limit or 30), 100))
+
+    # 1. Read installed apps from registry
+    installed = {}
+    for root in (winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER):
+        for sub in (
+            r"Software\Microsoft\Windows\CurrentVersion\Uninstall",
+            r"Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall",
+        ):
+            try:
+                with winreg.OpenKey(root, sub) as key:
+                    for i in range(winreg.QueryInfoKey(key)[0]):
+                        try:
+                            with winreg.OpenKey(key, winreg.EnumKey(key, i)) as sk:
+                                disp = winreg.QueryValueEx(sk, "DisplayName")[0]
+                                if not disp or disp.startswith("KB") or "Update for" in disp or "Security Update" in disp:
+                                    continue
+                                ver = ""
+                                try:
+                                    ver = winreg.QueryValueEx(sk, "DisplayVersion")[0]
+                                except Exception:
+                                    pass
+                                pub = ""
+                                try:
+                                    pub = winreg.QueryValueEx(sk, "Publisher")[0]
+                                except Exception:
+                                    pass
+                                if filter_clean and filter_clean not in disp.lower():
+                                    continue
+                                installed[disp] = {"version": ver, "publisher": pub}
+                        except Exception:
+                            continue
+            except Exception:
+                continue
+
+    # 2. Check winget upgrades if requested
+    winget_upgrades = {}
+    if check_updates:
+        try:
+            r = subprocess.run(
+                ["winget", "upgrade", "--include-unknown"],
+                capture_output=True, text=True, timeout=10, encoding="utf-8", errors="replace"
+            )
+            lines = r.stdout.splitlines()
+            sep_idx = -1
+            for idx, line in enumerate(lines):
+                if line.startswith("---"):
+                    sep_idx = idx
+                    break
+            if sep_idx != -1:
+                for line in lines[sep_idx + 1:]:
+                    parts = re.split(r"\s{2,}", line.strip())
+                    if len(parts) >= 4:
+                        name, pkg_id, cur_ver, avail_ver = parts[0], parts[1], parts[2], parts[3]
+                        winget_upgrades[name.lower()] = {
+                            "name": name, "id": pkg_id, "current": cur_ver, "latest": avail_ver
+                        }
+        except Exception:
+            pass
+
+    # 3. Build report
+    matched_items = []
+    for disp, info in sorted(installed.items(), key=lambda x: x[0].lower()):
+        cur_v = info["version"] or "(未知)"
+        latest_v = "-"
+        status = "已是最新"
+
+        # Check if matched in winget upgrades
+        disp_low = disp.lower()
+        for w_low, w_info in winget_upgrades.items():
+            if w_low in disp_low or disp_low in w_low:
+                latest_v = w_info["latest"]
+                status = f"可升级至 {latest_v}"
+                break
+
+        matched_items.append((disp, cur_v, latest_v, status))
+
+    # Also add any winget items not in registry if filtering matches
+    for w_low, w_info in winget_upgrades.items():
+        if filter_clean and filter_clean not in w_low:
+            continue
+        if not any(w_low in item[0].lower() or item[0].lower() in w_low for item in matched_items):
+            matched_items.append((w_info["name"], w_info["current"], w_info["latest"], f"可升级至 {w_info['latest']} (winget)"))
+
+    total_count = len(matched_items)
+    display_items = matched_items[:limit]
+
+    out = [
+        f"### [系统软件统计] (共检索到 {total_count} 款软件，{len(winget_upgrades)} 款可升级)",
+        "",
+        "| 软件名称 | 当前版本 | 最新版本 | 升级状态 |",
+        "| --- | --- | --- | --- |",
+    ]
+    for name, c_ver, l_ver, st in display_items:
+        out.append(f"| {name} | {c_ver} | {l_ver} | {st} |")
+
+    if total_count > limit:
+        out.append(f"\n*(仅显示前 {limit} 款，可提供 filter_keyword 进行精确筛选)*")
+
+    return "\n".join(out)
+
+
+SOFTWARE_INVENTORY_DEF = {
+    "type": "function",
+    "function": {
+        "name": "software_inventory",
+        "description": "统计本机安装的系统软件、当前版本，并通过 winget 检查是否有最新版本及升级状态。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "filter_keyword": {"type": "string", "description": "软件名称筛选关键字（如 'chrome', 'wechat', 'python'）"},
+                "check_updates": {"type": "boolean", "description": "是否联网检查最新可用版本（默认 True）", "default": True},
+                "limit": {"type": "integer", "description": "最多显示几款软件（默认 30）", "default": 30},
+            },
+        },
+    },
+}
+
+
 SYSTEM_TOOLS: dict[str, dict] = {
     "get_time": {"def": GET_TIME_DEF, "fn": get_time},
     "system_info": {"def": SYSTEM_INFO_DEF, "fn": system_info},
+    "software_inventory": {"def": SOFTWARE_INVENTORY_DEF, "fn": software_inventory},
     "shutdown": {"def": SHUTDOWN_DEF, "fn": shutdown},
     "check_network": {"def": CHECK_NETWORK_DEF, "fn": check_network},
     "clipboard_get": {"def": CLIPBOARD_GET_DEF, "fn": clipboard_get},

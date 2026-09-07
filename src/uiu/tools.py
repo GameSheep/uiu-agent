@@ -205,6 +205,12 @@ from .skills_runtime import SKILL_INDEX_TOOLS
 from .clarify import CLARIFY_TOOLS
 from .sessions import SESSION_SEARCH_DEF, session_search_tool
 from .macros import MACRO_TOOLS, macro_tool_defs
+from .file_tools import FILE_TOOLS, file_tool_defs
+from .browser_login import BROWSER_LOGIN_TOOLS, browser_login_tool_defs
+from .monitor_tools import MONITOR_TOOLS, monitor_tool_defs
+from .screen_watcher import SCREEN_WATCHER_TOOLS, screen_watcher_tool_defs
+from .email_gui import EMAIL_GUI_TOOLS, email_gui_tool_defs
+from .cron import CRON_TOOLS, cron_tool_defs
 
 # 兼容层：新 desktop API（DESKTOP_TOOL_SCHEMAS + dispatch_tool）桥接到
 # 旧注册表形状。send_wechat 排除在外——它经 WECHAT_TOOLS 注册，避免重复。
@@ -262,6 +268,12 @@ BUILTIN_TOOLS: dict[str, dict] = {
     **SKILL_INDEX_TOOLS,
     **MACRO_TOOLS,
     **CLARIFY_TOOLS,
+    **FILE_TOOLS,
+    **BROWSER_LOGIN_TOOLS,
+    **MONITOR_TOOLS,
+    **SCREEN_WATCHER_TOOLS,
+    **EMAIL_GUI_TOOLS,
+    **CRON_TOOLS,
 }
 
 
@@ -296,6 +308,12 @@ def tool_groups() -> list[tuple[str, list[str]]]:
         ("ime", IME_TOOLS),
         ("subagent", DELEGATION_TOOLS),
         ("agent", AGENT_TOOLS),
+        ("file", FILE_TOOLS),
+        ("login", BROWSER_LOGIN_TOOLS),
+        ("monitor", MONITOR_TOOLS),
+        ("watcher", SCREEN_WATCHER_TOOLS),
+        ("mail_gui", EMAIL_GUI_TOOLS),
+        ("cron", CRON_TOOLS),
         ("cv", ASKUI_TOOLS),
         ("voice", VOICE_TOOLS),
         ("memory", MEMORY_TOOLS),

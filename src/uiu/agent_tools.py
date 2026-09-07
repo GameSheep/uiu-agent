@@ -146,6 +146,47 @@ def list_agents() -> str:
     return "\n".join(lines)
 
 
+def launch_agent_terminal(agent: str = "claude", task: str = "", cwd: str | None = None, keep_open: bool = True) -> str:
+    """Launch a visible, interactive cmd.exe console window running an external agent (Claude Code / Codex)."""
+    agent = (agent or "claude").lower().strip()
+    target_cwd = cwd or os.getcwd()
+    from ._sandbox import check_cwd
+    ok, msg = check_cwd(target_cwd)
+    if not ok:
+        return msg
+
+    exe = shutil.which(agent) or agent
+    # Build command line to execute inside cmd
+    cmd_parts = [f'cd /d "{target_cwd}"']
+    if task.strip():
+        cmd_parts.append(f'"{exe}" "{task.strip()}"')
+    else:
+        cmd_parts.append(f'"{exe}"')
+
+    inner_cmd = " && ".join(cmd_parts)
+    flag = "/k" if keep_open else "/c"
+    full_cmd = f'start "uiu - {agent} agent" cmd.exe {flag} "{inner_cmd}"'
+
+    try:
+        subprocess.Popen(full_cmd, shell=True, cwd=target_cwd)
+        return f"[ok] 已在独立 cmd 窗口中启动 {agent} 终端交互 (工作目录: {target_cwd})"
+    except Exception as e:
+        return f"[error] 启动终端失败: {type(e).__name__}: {e}"
+
+
+def agent_file_editor(agent: str = "claude", file_path: str = "", prompt: str = "", cwd: str | None = None) -> str:
+    """Delegate a file modification task to an external agent CLI (Claude Code or Codex)."""
+    file_path = (file_path or "").strip()
+    prompt = (prompt or "").strip()
+    if not file_path:
+        return "[error] file_path 不能为空"
+    if not prompt:
+        return "[error] prompt 不能为空"
+
+    task = f"Please inspect and modify file '{file_path}': {prompt}"
+    return delegate(agent=agent, task=task, cwd=cwd)
+
+
 # ---------- tool definitions ----------
 
 DELEGATE_DEF = {
@@ -192,10 +233,47 @@ LIST_AGENTS_DEF = {
     },
 }
 
+LAUNCH_AGENT_TERMINAL_DEF = {
+    "type": "function",
+    "function": {
+        "name": "launch_agent_terminal",
+        "description": "自动启动独立可见的 cmd 命令行窗口，并在其中运行外部 agent（如 Claude Code 或 Codex），方便交互式修改文件和观察进度。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "agent": {"type": "string", "enum": ["claude", "codex", "cmd", "powershell"], "default": "claude", "description": "要启动的 agent CLI 或命令行"},
+                "task": {"type": "string", "description": "启动后执行的初始任务描述（可选）"},
+                "cwd": {"type": "string", "description": "工作目录（可选）"},
+                "keep_open": {"type": "boolean", "description": "执行完毕后是否保持终端窗口打开（默认 True）", "default": True},
+            },
+        },
+    },
+}
+
+AGENT_FILE_EDITOR_DEF = {
+    "type": "function",
+    "function": {
+        "name": "agent_file_editor",
+        "description": "调用外部 Claude Code 或 Codex agent 来修改或审查指定文件。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "file_path": {"type": "string", "description": "待修改的文件路径"},
+                "prompt": {"type": "string", "description": "具体的修改要求或指示"},
+                "agent": {"type": "string", "enum": ["claude", "codex"], "default": "claude"},
+                "cwd": {"type": "string", "description": "工作目录（可选）"},
+            },
+            "required": ["file_path", "prompt"],
+        },
+    },
+}
+
 
 AGENT_TOOLS: dict[str, dict] = {
     "delegate": {"def": DELEGATE_DEF, "fn": delegate},
     "list_agents": {"def": LIST_AGENTS_DEF, "fn": list_agents},
+    "launch_agent_terminal": {"def": LAUNCH_AGENT_TERMINAL_DEF, "fn": launch_agent_terminal},
+    "agent_file_editor": {"def": AGENT_FILE_EDITOR_DEF, "fn": agent_file_editor},
 }
 
 

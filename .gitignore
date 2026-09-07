@@ -16,7 +16,9 @@ venv/
 workspace/.env
 *.env.local
 
-workspace/sessions/# logs & temp
+workspace/sessions/
+workspace/cron/
+# logs & temp
 workspace/logs/
 *.log
 smoke_test.py

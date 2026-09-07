@@ -32,16 +32,86 @@ def _get_winrt_reader():
         if _winrt_reader is not None:
             return _winrt_reader
         try:
+            # Pre-initialize RapidOCR/onnxruntime first to avoid Windows DirectX DLL initialization conflict
+            try:
+                _get_rapidocr_engine()
+            except Exception:
+                pass
             from screen_ocr import Reader
             _winrt_reader = Reader.create_fast_reader()
             return _winrt_reader
-        except ImportError:
+        except Exception:
             return None
+
+
+def _parse_winrt_lines(ocr_result, offset_x: int = 0, offset_y: int = 0) -> list[dict]:
+    """Parse WinRT OCR lines into word-level and line-level elements with exact bounds."""
+    items = []
+    if not hasattr(ocr_result, "lines"):
+        return items
+
+    for line in ocr_result.lines:
+        if not hasattr(line, "words") or not line.words:
+            continue
+
+        words = line.words
+        text = "".join(w.text for w in words if hasattr(w, "text")).strip()
+        if not text:
+            continue
+
+        parsed_words = []
+        for w in words:
+            if hasattr(w, "left") and hasattr(w, "top"):
+                wx = w.left + offset_x
+                wy = w.top + offset_y
+                ww = getattr(w, "width", 0)
+                wh = getattr(w, "height", 0)
+                parsed_words.append({
+                    "text": getattr(w, "text", ""),
+                    "x": int(round(wx)),
+                    "y": int(round(wy)),
+                    "w": int(round(ww)),
+                    "h": int(round(wh)),
+                    "cx": float(wx + ww / 2.0),
+                    "cy": float(wy + wh / 2.0),
+                    "score": 1.0,
+                })
+
+        if not parsed_words:
+            continue
+
+        x1 = min(w["x"] for w in parsed_words)
+        y1 = min(w["y"] for w in parsed_words)
+        x2 = max(w["x"] + w["w"] for w in parsed_words)
+        y2 = max(w["y"] + w["h"] for w in parsed_words)
+
+        items.append({
+            "text": text,
+            "x": int(x1),
+            "y": int(y1),
+            "w": int(x2 - x1),
+            "h": int(y2 - y1),
+            "score": 1.0,
+            "cx": float((x1 + x2) / 2.0),
+            "cy": float((y1 + y2) / 2.0),
+            "words": parsed_words,
+        })
+
+    return items
 
 
 def _ocr_winrt_full() -> list[dict]:
     """OCR full screen using WinRT (fast, < 1s)."""
-    reader = _get_winrt_reader()
+    try:
+        from .window_manager import ensure_default_desktop
+        ensure_default_desktop()
+    except Exception:
+        pass
+
+    try:
+        reader = _get_winrt_reader()
+    except Exception:
+        return []
     if reader is None:
         return []
 
@@ -58,53 +128,27 @@ def _ocr_winrt_full() -> list[dict]:
     else:
         return []
 
-    items = []
     if not result or not hasattr(result, "result"):
-        return items
+        return []
 
-    ocr_result = result.result
-    if not hasattr(ocr_result, "lines"):
-        return items
-
-    for line in ocr_result.lines:
-        if not hasattr(line, "words") or not line.words:
-            continue
-
-        # Build line text from words
-        words = line.words
-        text = "".join(w.text for w in words if hasattr(w, "text")).strip()
-        if not text:
-            continue
-
-        # Calculate bounding box from words
-        first_word = words[0]
-        last_word = words[-1]
-
-        if hasattr(first_word, "left") and hasattr(first_word, "top"):
-            x1 = first_word.left
-            y1 = first_word.top
-            x2 = last_word.left + last_word.width
-            y2 = first_word.top + first_word.height
-        else:
-            continue
-
-        items.append({
-            "text": text,
-            "x": int(x1), "y": int(y1),
-            "w": int(x2 - x1), "h": int(y2 - y1),
-            "score": 1.0,
-            "cx": (x1 + x2) / 2,
-            "cy": (y1 + y2) / 2,
-        })
-
-    return items
+    return _parse_winrt_lines(result.result, offset_x=0, offset_y=0)
 
 
 def _ocr_winrt_region(x: int, y: int, w: int, h: int) -> list[dict]:
-    """OCR a region using WinRT (very fast, < 0.2s)."""
-    reader = _get_winrt_reader()
+    """OCR a region using WinRT (fast, < 0.2s) with RapidOCR fallback."""
+    try:
+        from .window_manager import ensure_default_desktop
+        ensure_default_desktop()
+    except Exception:
+        pass
+
+    try:
+        reader = _get_winrt_reader()
+    except Exception:
+        reader = None
+
     if reader is None:
-        return []
+        return _ocr_region_rapidocr(x, y, w, h)
 
     # Take screenshot of region
     import pyautogui
@@ -114,47 +158,10 @@ def _ocr_winrt_region(x: int, y: int, w: int, h: int) -> list[dict]:
 
     # OCR the image directly (pass PIL Image, not path)
     result = reader.read_image(img)
-    items = []
-
     if not result or not hasattr(result, "result"):
-        return items
+        return []
 
-    ocr_result = result.result
-    if not hasattr(ocr_result, "lines"):
-        return items
-
-    for line in ocr_result.lines:
-        if not hasattr(line, "words") or not line.words:
-            continue
-
-        # Build line text from words
-        words = line.words
-        text = "".join(w.text for w in words if hasattr(w, "text")).strip()
-        if not text:
-            continue
-
-        # Calculate bounding box from words (region-relative → screen)
-        first_word = words[0]
-        last_word = words[-1]
-
-        if hasattr(first_word, "left") and hasattr(first_word, "top"):
-            sx1 = first_word.left + x
-            sy1 = first_word.top + y
-            sx2 = last_word.left + last_word.width + x
-            sy2 = first_word.top + first_word.height + y
-        else:
-            continue
-
-        items.append({
-            "text": text,
-            "x": int(sx1), "y": int(sy1),
-            "w": int(sx2 - sx1), "h": int(sy2 - sy1),
-            "score": 1.0,
-            "cx": (sx1 + sx2) / 2,
-            "cy": (sy1 + sy2) / 2,
-        })
-
-    return items
+    return _parse_winrt_lines(result.result, offset_x=x, offset_y=y)
 
 
 # ---------- RapidOCR fallback (if WinRT not available) ----------
@@ -164,7 +171,7 @@ _rapidocr_lock = threading.Lock()
 
 
 def _get_rapidocr_engine():
-    """Get or create RapidOCR engine (fallback)."""
+    """Get or create RapidOCR engine (with use_angle_cls=False for faster screen OCR)."""
     global _rapidocr_engine
     if _rapidocr_engine is not None:
         return _rapidocr_engine
@@ -174,9 +181,9 @@ def _get_rapidocr_engine():
             return _rapidocr_engine
         try:
             from rapidocr_onnxruntime import RapidOCR
-            _rapidocr_engine = RapidOCR()
+            _rapidocr_engine = RapidOCR(use_angle_cls=False)
             return _rapidocr_engine
-        except ImportError:
+        except Exception:
             return None
 
 
@@ -187,38 +194,107 @@ def _ocr_rapidocr_full() -> list[dict]:
         return []
 
     import pyautogui
-    import tempfile
-    tmp = Path(tempfile.gettempdir()) / "uiu_screen.png"
+    import numpy as np
     img = pyautogui.screenshot()
-    img.save(str(tmp))
+    img_np = np.array(img)
 
-    result, _ = engine(str(tmp))
+    result, _ = engine(img_np)
     items = []
     for item in result or []:
         box, text, score = item
         x1, y1 = box[0]
         x2, y2 = box[2]
+        bw = x2 - x1
+        bh = y2 - y1
+        words = []
+        n_chars = len(text)
+        if n_chars > 0:
+            char_w = bw / n_chars
+            for idx, ch in enumerate(text):
+                cw_x = x1 + idx * char_w
+                words.append({
+                    "text": ch,
+                    "x": int(cw_x),
+                    "y": int(y1),
+                    "w": int(char_w),
+                    "h": int(bh),
+                    "cx": float(cw_x + char_w / 2.0),
+                    "cy": float((y1 + y2) / 2.0),
+                    "score": float(score),
+                })
         items.append({
             "text": text,
             "x": int(x1), "y": int(y1),
-            "w": int(x2 - x1), "h": int(y2 - y1),
+            "w": int(bw), "h": int(bh),
             "score": float(score),
             "cx": (x1 + x2) / 2,
             "cy": (y1 + y2) / 2,
+            "words": words,
+        })
+    return items
+
+
+def _ocr_region_rapidocr(x: int, y: int, w: int, h: int) -> list[dict]:
+    """OCR a sub-region using RapidOCR (100% in-memory, zero disk I/O, high Chinese accuracy)."""
+    engine = _get_rapidocr_engine()
+    if engine is None:
+        return []
+
+    import pyautogui
+    import numpy as np
+    img = pyautogui.screenshot(region=(x, y, w, h))
+    img_np = np.array(img)
+
+    result, _ = engine(img_np)
+    items = []
+    for item in result or []:
+        box, text, score = item
+        x1, y1 = box[0]
+        x2, y2 = box[2]
+        bw = x2 - x1
+        bh = y2 - y1
+        words = []
+        n_chars = len(text)
+        if n_chars > 0:
+            char_w = bw / n_chars
+            for idx, ch in enumerate(text):
+                cw_x = x1 + x + idx * char_w
+                words.append({
+                    "text": ch,
+                    "x": int(cw_x),
+                    "y": int(y1 + y),
+                    "w": int(char_w),
+                    "h": int(bh),
+                    "cx": float(cw_x + char_w / 2.0),
+                    "cy": float((y1 + y2) / 2.0 + y),
+                    "score": float(score),
+                })
+        items.append({
+            "text": text,
+            "x": int(x1 + x), "y": int(y1 + y),
+            "w": int(bw), "h": int(bh),
+            "score": float(score),
+            "cx": (x1 + x2) / 2 + x,
+            "cy": (y1 + y2) / 2 + y,
+            "words": words,
         })
     return items
 
 
 # ---------- unified OCR API ----------
 
-def _ocr_full_screen() -> list[dict]:
-    """OCR full screen (WinRT preferred, RapidOCR fallback)."""
+def _ocr_full_screen(engine: str = "auto") -> list[dict]:
+    """OCR full screen.
+    engine: 'auto' (WinRT if available, RapidOCR fallback) | 'rapidocr' | 'winrt'
+    """
+    if engine == "rapidocr":
+        return _ocr_rapidocr_full()
+    if engine == "winrt":
+        return _ocr_winrt_full()
     # Try WinRT first (fast)
     items = _ocr_winrt_full()
     if items:
         return items
-
-    # Fallback to RapidOCR
     return _ocr_rapidocr_full()
 
 
@@ -253,14 +329,149 @@ def _ocr_image(image_path: str) -> list[dict]:
     return items
 
 
-def _ocr_region(x: int, y: int, w: int, h: int) -> list[dict]:
-    """OCR a region (WinRT preferred)."""
+def _ocr_region(x: int, y: int, w: int, h: int, engine: str = "auto") -> list[dict]:
+    """OCR a region.
+    engine: 'auto' | 'rapidocr' (high Chinese accuracy) | 'winrt' (fast, sub-100ms)
+    """
+    if engine == "rapidocr":
+        return _ocr_region_rapidocr(x, y, w, h)
+    if engine == "winrt":
+        return _ocr_winrt_region(x, y, w, h)
     items = _ocr_winrt_region(x, y, w, h)
     return items
 
 
+def match_text_element(items: list[dict], target_text: str, exact: bool = False) -> dict | None:
+    """Find the best matching element with word-level zero-drift center coordinates."""
+    target = target_text.strip()
+    if not target:
+        return None
+
+    def _make_word_item(w: dict, score: float = 1.0) -> dict:
+        return {
+            "text": w["text"],
+            "x": int(w["x"]),
+            "y": int(w["y"]),
+            "w": int(w["w"]),
+            "h": int(w["h"]),
+            "cx": float(w["cx"]),
+            "cy": float(w["cy"]),
+            "score": score,
+        }
+
+    # 1. Exact word match
+    for line in items:
+        for w in line.get("words", []):
+            if w.get("text", "").strip() == target:
+                return _make_word_item(w, score=1.0)
+
+    # 2. Contiguous sub-words sequence forming target
+    for line in items:
+        words = line.get("words", [])
+        n = len(words)
+        if n >= 2:
+            for k in range(2, n + 1):
+                for i in range(n - k + 1):
+                    sub = words[i:i + k]
+                    joined = "".join(w.get("text", "") for w in sub).strip()
+                    if joined == target:
+                        x1 = min(w["x"] for w in sub)
+                        y1 = min(w["y"] for w in sub)
+                        x2 = max(w["x"] + w["w"] for w in sub)
+                        y2 = max(w["y"] + w["h"] for w in sub)
+                        return {
+                            "text": joined,
+                            "x": int(x1),
+                            "y": int(y1),
+                            "w": int(x2 - x1),
+                            "h": int(y2 - y1),
+                            "cx": float((x1 + x2) / 2.0),
+                            "cy": float((y1 + y2) / 2.0),
+                            "score": 1.0,
+                        }
+
+    # 3. Exact full line match
+    for line in items:
+        if line.get("text", "").strip() == target:
+            return dict(line)
+
+    if exact:
+        return None
+
+    # 4. Substring in individual word
+    for line in items:
+        for w in line.get("words", []):
+            wt = w.get("text", "")
+            if target in wt:
+                idx = wt.find(target)
+                r1 = idx / len(wt)
+                r2 = (idx + len(target)) / len(wt)
+                sub_x1 = w["x"] + w["w"] * r1
+                sub_x2 = w["x"] + w["w"] * r2
+                return {
+                    "text": target,
+                    "x": int(round(sub_x1)),
+                    "y": int(w["y"]),
+                    "w": int(round(sub_x2 - sub_x1)),
+                    "h": int(w["h"]),
+                    "cx": float((sub_x1 + sub_x2) / 2.0),
+                    "cy": float(w["cy"]),
+                    "score": 0.95,
+                }
+
+    # 5. Substring in line with words
+    for line in items:
+        lt = line.get("text", "")
+        if target in lt:
+            words = line.get("words", [])
+            if words:
+                matched_words = [w for w in words if any(c in w.get("text", "") for c in target)]
+                if matched_words:
+                    x1 = min(w["x"] for w in matched_words)
+                    y1 = min(w["y"] for w in matched_words)
+                    x2 = max(w["x"] + w["w"] for w in matched_words)
+                    y2 = max(w["y"] + w["h"] for w in matched_words)
+                    return {
+                        "text": target,
+                        "x": int(x1),
+                        "y": int(y1),
+                        "w": int(x2 - x1),
+                        "h": int(y2 - y1),
+                        "cx": float((x1 + x2) / 2.0),
+                        "cy": float((y1 + y2) / 2.0),
+                        "score": 0.90,
+                    }
+            # Fallback interpolation for line without words (e.g. RapidOCR)
+            idx = lt.find(target)
+            r1 = idx / len(lt)
+            r2 = (idx + len(target)) / len(lt)
+            sub_x1 = line["x"] + line["w"] * r1
+            sub_x2 = line["x"] + line["w"] * r2
+            return {
+                "text": target,
+                "x": int(round(sub_x1)),
+                "y": int(line["y"]),
+                "w": int(round(sub_x2 - sub_x1)),
+                "h": int(line["h"]),
+                "cx": float((sub_x1 + sub_x2) / 2.0),
+                "cy": float(line["cy"]),
+                "score": 0.85,
+            }
+
+    # 6. Case-insensitive / fuzzy match
+    target_lower = target.lower()
+    for line in items:
+        if target_lower in line.get("text", "").lower():
+            return dict(line)
+
+    return None
+
+
 def _find(items: list[dict], text: str) -> list[dict]:
     """Find OCR items whose text matches (exact or contains)."""
+    elem = match_text_element(items, text, exact=False)
+    if elem:
+        return [elem]
     text = text.strip()
     exact = [i for i in items if i["text"] == text]
     if exact:
@@ -282,22 +493,24 @@ def screen_read_text() -> str:
 
 
 def click_text(text: str, click_count: int = 1) -> str:
-    """Click a button/element by its visible text (OCR-based, no vision model)."""
+    """Click a button/element by its visible text using hierarchical sniffing."""
     import pyautogui
-    items = _ocr_full_screen()
-    matches = _find(items, text)
-    if not matches:
+    from .vision_locator import locate_text_on_screen
+
+    elem = locate_text_on_screen(text, use_hierarchical=True)
+    if not elem:
+        items = _ocr_full_screen()
         cands = [it["text"] for it in items if len(it["text"]) <= len(text) + 4]
         hint = f" 相近文字: {cands[:8]}" if cands else ""
         return f"[error] 屏幕上没找到 '{text}'{hint}"
 
-    best = max(matches, key=lambda i: i["score"])
-    cx, cy = int(best["cx"]), int(best["cy"])
-    pyautogui.moveTo(cx, cy, duration=0.2)
+    cx, cy = int(round(elem["cx"])), int(round(elem["cy"]))
+    pyautogui.moveTo(cx, cy, duration=0.0)
     for _ in range(max(1, click_count)):
         pyautogui.click()
-        time.sleep(0.05)
-    return f"[ok] 已点击 '{best['text']}' 位置 ({cx},{cy})"
+        time.sleep(0.02)
+    tier_info = f" (第{elem.get('tier', 3)}级命中)" if "tier" in elem else ""
+    return f"[ok] 已点击 '{elem['text']}' 位置 ({cx},{cy}){tier_info}"
 
 
 def type_text(text: str, interval: float = 0.02) -> str:

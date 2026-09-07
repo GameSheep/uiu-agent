@@ -154,7 +154,8 @@ def _build_parser() -> argparse.ArgumentParser:
 
     # publish
     pp = sub.add_parser("publish", help="build & upload to PyPI")
-    pp.add_argument("--test", action="store_true", help="publish to TestPyPI (dry run for real PyPI)")
+    pp.add_argument("--test", action="store_true", help="publish to TestPyPI")
+    pp.add_argument("--dry-run", action="store_true", help="build + inspect wheel locally, upload nothing")
     pp.add_argument("--token", help="PyPI API token (or set env PYPI_TOKEN)")
 
     # cron
@@ -165,6 +166,7 @@ def _build_parser() -> argparse.ArgumentParser:
     pcr_add.add_argument("name", help="job name")
     pcr_add.add_argument("schedule", help="30m | 2h | 1d | daily 09:00 | 'M H * * *' | once <ISO>")
     pcr_add.add_argument("task", help="agent task prompt to run")
+    pcr_add.add_argument("--shell", action="store_true", help="run task as a shell command (no agent, zero tokens)")
     pcr_rm = pcr_sub.add_parser("remove", help="remove a job (id or name)")
     pcr_rm.add_argument("name")
     pcr_en = pcr_sub.add_parser("enable", help="enable a job")
@@ -181,8 +183,34 @@ def _build_parser() -> argparse.ArgumentParser:
     pse_sub.add_parser("list", help="list saved sessions")
     pse_show = pse_sub.add_parser("show", help="show recent turns of a session")
     pse_show.add_argument("name")
+    pse_search = pse_sub.add_parser("search", help="keyword search across saved sessions")
+    pse_search.add_argument("query")
+    pse_search.add_argument("--limit", type=int, default=5)
     pse_rm = pse_sub.add_parser("remove", help="delete a session")
     pse_rm.add_argument("name")
+
+    # macro
+    pmc = sub.add_parser("macro", help="record/play keyboard-mouse macros (keyboard-macro style)")
+    pmc_sub = pmc.add_subparsers(dest="action", metavar="<action>", required=True)
+    pmc_rec = pmc_sub.add_parser("record", help="record a macro (press F9 to stop)")
+    pmc_rec.add_argument("name")
+    pmc_rec.add_argument("--desc", default="", help="macro description")
+    pmc_rec.add_argument("--timeout", type=int, default=0, help="auto-stop after N seconds (0=wait for F9)")
+    pmc_play = pmc_sub.add_parser("play", help="play a macro")
+    pmc_play.add_argument("name")
+    pmc_play.add_argument("--speed", type=float, default=1.0, help="speed multiplier (2=faster)")
+    pmc_play.add_argument("--from", dest="start", type=int, default=0, help="start step (1-based)")
+    pmc_play.add_argument("--to", dest="end", type=int, default=0, help="end step (inclusive)")
+    pmc_play.add_argument("--yes", action="store_true", help="skip confirmation")
+    pmc_sub.add_parser("list", help="list saved macros")
+    pmc_rm = pmc_sub.add_parser("remove", help="delete a macro")
+    pmc_rm.add_argument("name")
+
+    # doctor
+    pdoc = sub.add_parser("doctor", help="diagnose & fix uiu configuration problems")
+    pdoc.add_argument("--lint", action="store_true", help="read-only check, no fixes")
+    pdoc.add_argument("--fix", action="store_true", help="apply auto-fixes (prompts per item)")
+    pdoc.add_argument("--yes", action="store_true", help="with --fix: apply all without prompting")
 
     return p
 
@@ -249,13 +277,20 @@ def _run_tui(args, parser: argparse.ArgumentParser) -> int:
 
     client = make_client(cfg.model)
     ws = load_workspace(ws_path)
+    # 启动时连接配置的 MCP 服务器（best-effort，失败不影响使用）
+    try:
+        from .mcp_tools import try_connect_all as _mcp_connect
+        for line in _mcp_connect(cfg):
+            print(line, flush=True)
+    except Exception:
+        pass
     return repl(client, ws, model=cfg.model.default, cfg=cfg.model, app_cfg=cfg)
 
 
 def _dispatch(args, parser: argparse.ArgumentParser) -> int:
     from .commands import (
-        cmd_channel, cmd_config, cmd_cron, cmd_init, cmd_model, cmd_sessions, cmd_show,
-        cmd_update, cmd_version, cmd_skills, cmd_publish, cmd_plugins,
+        cmd_channel, cmd_config, cmd_cron, cmd_doctor, cmd_init, cmd_macro, cmd_model,
+        cmd_sessions, cmd_show, cmd_update, cmd_version, cmd_skills, cmd_publish, cmd_plugins,
         cmd_serve,
     )
 
@@ -275,6 +310,8 @@ def _dispatch(args, parser: argparse.ArgumentParser) -> int:
         "serve": cmd_serve,
         "cron": cmd_cron,
         "sessions": cmd_sessions,
+        "macro": cmd_macro,
+        "doctor": cmd_doctor,
     }
     handler = handlers.get(args.cmd)
     if handler is None:
@@ -294,10 +331,37 @@ def _resolve_workspace(args) -> Path | None:
     return None
 
 
+def _normalize_workspace_flag(argv: list[str]) -> list[str]:
+    """Move `--workspace X` (or `-w X`) before the subcommand.
+
+    argparse defines --workspace at the top level only, so `uiu init --workspace X`
+    would fail. Users naturally put it after the subcommand — accept both orders.
+    """
+    out: list[str] = []
+    i = 0
+    ws_flag: list[str] = []
+    while i < len(argv):
+        a = argv[i]
+        if a in ("--workspace", "-w"):
+            if i + 1 < len(argv):
+                ws_flag = [a, argv[i + 1]]
+                i += 2
+                continue
+            ws_flag = [a]
+            i += 1
+            continue
+        out.append(a)
+        i += 1
+    return ws_flag + out
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     # split argv: subcommands vs TUI default
-    raw = argv if argv is not None else sys.argv[1:]
+    raw = list(argv) if argv is not None else list(sys.argv[1:])
+    # Accept `--workspace` after the subcommand (hoist it to the front)
+    if raw and raw[0] not in ("--workspace", "-w") and "--workspace" in raw:
+        raw = _normalize_workspace_flag(raw)
     # If first arg starts with '-', treat as default (TUI) flags. Otherwise dispatch.
     if not raw or raw[0].startswith("-") and raw[0] not in ("-V", "--version"):
         # bare flags or nothing → TUI mode

@@ -1,6 +1,6 @@
 [project]
 name = "uiu"
-version = "0.1.5"
+version = "1.0.0"
 description = "A minimal personal-IP agent: SOUL-driven, skills-extensible, OpenAI-compatible CLI."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -21,11 +21,15 @@ dependencies = [
     "anthropic>=0.40.0",
     "rich>=13.7.0",
     "prompt-toolkit>=3.0.43",
+    # full-screen TUI (v1.0: OpenClaw-style application UI)
+    "textual>=8.0.0",
     "pyyaml>=6.0",
+    # wecom 官方回调 AES 解密 / 签名验证
+    "cryptography>=42.0.0",
     # channel adapters (lightweight socket clients; heavy SDKs stay optional)
     "slack-bolt>=1.18.0",
     # screen automation (click by name via OCR)
-    "rapidocr-onnxruntime>=1.3.0",
+    "rapidocr-onnxruntime>=1.2.3",
     "pyautogui>=0.9.54",
     "pillow>=10.0.0",
     # windows desktop control (window switching, hotkeys)

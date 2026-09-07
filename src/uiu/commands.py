@@ -683,9 +683,39 @@ def _parse_options(items: list[str] | None) -> dict:
 
 # ---------- update ----------
 
+def _is_git_source_install() -> bool:
+    """True when running from a git checkout (dev mode). PyPI/npm installs aren't."""
+    repo_root = Path(__file__).resolve().parent.parent.parent
+    return (repo_root / ".git").exists() or (repo_root / "src").is_dir()
+
+
 def cmd_update(args) -> int:
     ws = _workspace(args)
     if args.what == "self":
+        if not _is_git_source_install():
+            # PyPI / npm 安装：无 git 仓库，直接 pip 升级当前环境
+            import importlib.metadata as _md
+            try:
+                cur = _md.version("uiu")
+            except Exception:
+                cur = "?"
+            print(f"· 当前 uiu {cur}，从 PyPI 升级…")
+            idx = os.environ.get("UIU_PIP_INDEX", "")
+            cmd = [sys.executable, "-m", "pip", "install", "--upgrade", "--quiet",
+                   "--disable-pip-version-check", "uiu"]
+            if idx:
+                cmd += ["-i", idx]
+            r = subprocess.run(cmd, check=False)
+            if r.returncode != 0:
+                _print_err("pip 升级失败（网络/镜像问题？）")
+                return 1
+            try:
+                new = _md.version("uiu")
+            except Exception:
+                new = "?"
+            _print_ok(f"更新完成 {cur} → {new}，重启 uiu 生效")
+            print("  (npm 安装时也可用: npm update -g uiu)")
+            return 0
         if getattr(args, "no_pull", False):
             # skip git pull, still verify + staged install
             from .safe_update import staged_install, ensure_backup_point
@@ -842,10 +872,48 @@ author: you
 
 # ---------- publish ----------
 
+
+def _verify_version_consistency() -> tuple[bool, str]:
+    """pyproject.toml vs src/uiu/__init__.py must agree (v1.0 publish gate)."""
+    import tomllib
+    from pathlib import Path as _P
+    here = _P(__file__).resolve().parent.parent.parent  # src/uiu -> repo root
+    pyproject = here / "pyproject.toml"
+    init = here / "src" / "uiu" / "__init__.py"
+    if not pyproject.exists() or not init.exists():
+        return False, f"cannot locate repo files ({pyproject}, {init})"
+    try:
+        with open(pyproject, "rb") as f:
+            py_ver = tomllib.load(f)["project"]["version"]
+    except Exception as e:
+        return False, f"pyproject.toml unreadable: {e}"
+    txt = init.read_text(encoding="utf-8")
+    import re as _re
+    m = _re.search(r"__version__\s*=\s*[\"']([^\"']+)[\"']", txt)
+    if not m:
+        return False, "src/uiu/__init__.py missing __version__"
+    if m.group(1) != py_ver:
+        return False, f"version mismatch: pyproject={py_ver} vs __init__={m.group(1)}"
+    return True, py_ver
+
+
 def cmd_publish(args) -> int:
-    """Build wheel + sdist and upload to PyPI (or TestPyPI with --test)."""
+    """Build wheel + sdist and upload to PyPI (or TestPyPI with --test).
+
+    --dry-run: build + inspect wheel contents locally, upload nothing.
+    """
+    dry_run = bool(getattr(args, "dry_run", False))
+
+    # version-consistency gate (v1.0 release discipline)
+    ok, ver = _verify_version_consistency()
+    if not ok:
+        _print_err(f"publish blocked: {ver}")
+        print("  fix version mismatch, then retry")
+        return 2
+    print(f"· version consistency ok ({ver})")
+
     token = args.token or os.environ.get("PYPI_TOKEN") or os.environ.get("TWINE_PASSWORD")
-    if not token:
+    if not token and not dry_run:
         _print_err("no PyPI token. Set PYPI_TOKEN env var or pass --token <token>.")
         print("  create one at https://pypi.org/manage/account/token/")
         return 2
@@ -863,6 +931,30 @@ def cmd_publish(args) -> int:
     if rc.returncode != 0:
         _print_err("build failed — fix errors above, then retry")
         return 1
+
+    # inspect built artifacts (ensure default workspace/skills packaged)
+    dist_dir = Path("dist")
+    wheels = sorted(dist_dir.glob("*.whl"))
+    if not wheels:
+        _print_err("no wheel produced in dist/")
+        return 1
+    wheel = wheels[-1]
+    print(f"· built {wheel.name}")
+    if dry_run:
+        import zipfile
+        names = []
+        with zipfile.ZipFile(wheel) as zf:
+            names = sorted(n for n in zf.namelist() if not n.startswith("uiu-"))
+        want = ["uiu/_default_workspace/SOUL.md", "uiu/_default_workspace/IDENTITY.md",
+                "uiu/_default_workspace/config.yaml"]
+        missing = [w for w in want if not any(n.endswith(w.split('/', 1)[1]) for n in names)]
+        print(f"· wheel contains {len(names)} files")
+        if missing:
+            print("  WARNING missing from wheel:", missing)
+        else:
+            print("  ok: default workspace bundled")
+        print("· dry-run complete — nothing uploaded")
+        return 0
 
     # 2. upload
     if args.test:
@@ -911,18 +1003,20 @@ def cmd_cron(args) -> int:
         for j in jobs:
             nxt = _t.strftime("%m-%d %H:%M", _t.localtime(j["next_run"])) if j.get("next_run") else "-"
             flag = "on" if j.get("enabled") else "off"
-            print(f"  {j['name']:<20} [{flag}] {j['schedule']:<16} 下次{nxt}  id={j['id']}")
+            kind = "[shell]" if j.get("run_shell") else ""
+            print(f"  {j['name']:<20} [{flag}] {j['schedule']:<16} 下次{nxt}  {kind} id={j['id']}")
             print(f"    {j['task'][:100]}")
         return 0
 
     if action == "add":
         try:
-            job = _cron.add_job(ws, args.name, args.schedule, args.task)
+            job = _cron.add_job(ws, args.name, args.schedule, args.task, run_shell=getattr(args, "shell", False))
         except ValueError as e:
             _print_err(str(e))
             return 2
-        _print_ok(f"added {job['id']} ({args.name} @ {args.schedule})")
-        print("  serve 运行时每 60s 自动 tick；手动跑: uiu cron tick")
+        kind = "shell 命令" if job.get("run_shell") else "agent 任务"
+        _print_ok(f"added {job['id']} ({args.name} @ {args.schedule} · {kind})")
+        print("  serve 运行时每 60s 自动 tick；手动跑: uiu cron run", args.name)
         return 0
 
     if action == "remove":
@@ -988,11 +1082,118 @@ def cmd_sessions(args) -> int:
             print(f"[{role}] {content[:300]}")
         return 0
 
+    if action == "search":
+        hits = _sessions.search_sessions(ws, args.query, limit=args.limit)
+        if not hits:
+            print("(no matches in saved sessions)")
+            return 0
+        for h in hits:
+            print(f"[{h['session']} · {h['role']}] {h['text'][:600]}")
+            for c in h.get("context", []):
+                print(f"    · ({c['role']}) {c['text'][:200]}")
+        return 0
+
     if action == "remove":
         if _sessions.remove_session(ws, args.name):
             _print_ok(f"removed {args.name}")
             return 0
         _print_err(f"no such session: {args.name}")
         return 2
+
+    return 2
+
+
+# ---------- doctor (OpenClaw-style diagnose & fix) ----------
+
+def cmd_doctor(args) -> int:
+    from .doctor import run_doctor
+    ws = _workspace(args)
+    return run_doctor(ws, lint=getattr(args, "lint", False),
+                      fix=getattr(args, "fix", False),
+                      yes=getattr(args, "yes", False))
+
+
+# ---------- macro (keyboard-macro style record/play) ----------
+
+def cmd_macro(args) -> int:
+    from . import macros as _macros
+    ws = _workspace(args)
+    action = args.action
+
+    if action == "list":
+        print(_macros.macro_list())
+        return 0
+
+    if action == "record":
+        if not getattr(args, "yes", False):
+            print("录制将真实捕获你的鼠标键盘操作。准备就绪后开始：")
+            print("  · 切到目标窗口")
+            print("  · 按 F9 结束录制")
+            try:
+                ans = input("开始录制？[Y/n] ").strip().lower()
+            except EOFError:
+                ans = "y"
+            if ans not in ("", "y", "yes"):
+                print("(取消)")
+                return 0
+        from .macro_recorder import MacroRecorder, macros_dir, save_macro
+        import re as _re
+        safe = _re.sub(r"[^a-zA-Z0-9_-]", "_", args.name.strip()).strip("_")[:64]
+        if not safe:
+            _print_err("宏名非法")
+            return 2
+        path = macros_dir(ws) / f"{safe}.json"
+        print(f"· 录制中…（按 F9 停止，--timeout 可设自动停止）")
+        rec = MacroRecorder(timeout=max(0, min(args.timeout or 0, 1800)))
+        try:
+            steps, aborted = rec.run()
+        except Exception as e:
+            _print_err(f"录制失败: {type(e).__name__}: {e}")
+            return 1
+        if not steps:
+            print("(未捕获到操作，未保存)")
+            return 0
+        save_macro(path, safe, getattr(args, "desc", "") or "", steps)
+        _print_ok(f"已录制宏 '{safe}'：{len(steps)} 步（{'F9 停止' if aborted else '超时自动停'}）→ {path.name}")
+        print("  回放: uiu macro play", safe)
+        return 0
+
+    if action == "play":
+        from .macro_recorder import load_macro
+        import re as _re
+        safe = _re.sub(r"[^a-zA-Z0-9_-]", "_", args.name.strip()).strip("_")[:64]
+        path = ws / "macros" / f"{safe}.json"
+        if not path.exists():
+            _print_err(f"宏不存在: {safe}")
+            return 2
+        try:
+            macro = load_macro(path)
+        except Exception as e:
+            _print_err(f"宏文件损坏: {e}")
+            return 2
+        steps = macro.get("steps", [])
+        print(f"宏 '{safe}': {len(steps)} 步 — {macro.get('description', '')}")
+        if not getattr(args, "yes", False):
+            print("回放将真实控制鼠标键盘。请确保目标窗口已就绪。")
+            print("  · 甩鼠标到屏幕左上角 或 按 F9 可紧急中止")
+            try:
+                ans = input(f"回放 {len(steps)} 步？[Y/n] ").strip().lower()
+            except EOFError:
+                ans = "y"
+            if ans not in ("", "y", "yes"):
+                print("(取消)")
+                return 0
+        from .macro_player import play_steps
+        played, status = play_steps(
+            steps, speed=max(0.1, float(args.speed or 1.0)),
+            start=args.start, end=args.end or None)
+        print(f"{status}（{played}/{len(steps)} 步）")
+        return 0
+
+    if action == "remove":
+        from . import macros as _macros_mod
+        out = _macros_mod.macro_remove(args.name)
+        print(out)
+        return 0 if out.startswith("[ok]") else 2
 
     return 2

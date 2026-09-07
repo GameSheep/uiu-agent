@@ -24,6 +24,29 @@ from pathlib import Path
 from .workspace import Workspace
 
 
+# 记忆写入后回调：用于运行期热刷新（TUI/gateway 注册后，ws.memory 立即更新）
+_memory_hooks: list = []
+
+
+def register_memory_hook(fn) -> None:
+    """Register a callable invoked after any memory write (best-effort refresh)."""
+    if callable(fn) and fn not in _memory_hooks:
+        _memory_hooks.append(fn)
+
+
+def _notify_memory_changed() -> None:
+    for fn in list(_memory_hooks):
+        try:
+            fn()
+        except Exception:
+            pass
+
+
+def notify_memory_changed() -> None:
+    """Public: ping registered hot-reload hooks after a memory write."""
+    _notify_memory_changed()
+
+
 def _ws() -> Workspace | None:
     """Find the active workspace (env > cwd/workspace > ~/workspace > ~/.uiu/workspace)."""
     import os
@@ -44,27 +67,81 @@ def _memory_path() -> Path:
 
 # ---------- memory ----------
 
+# Hermes 风格有界记忆：MEMORY.md 是一个「小预算」curated 文件，
+# 超预算时拒绝写入并提示先合并 —— 逼 agent 自己 consolidate，而非无限膨胀。
+MEMORY_BUDGET = 3000      # 记忆文件正文预算（字符）
+MEMORY_WARN_AT = 0.8      # 超过 80% 即提示合并
+
+
+def _memory_stats(path: Path) -> tuple[int, int, int]:
+    """Count memory entries and usage. Returns (n_entries, used_chars, budget).
+
+    Entries are top-level `- [` bullet lines (offset of the leading header is
+    excluded from the used budget). used = chars of entry lines only.
+    """
+    text = path.read_text(encoding="utf-8")
+    lines = text.splitlines()
+    header_end = 0
+    for i, ln in enumerate(lines):
+        if ln.startswith("#"):
+            header_end = i + 1
+        elif ln.startswith("-"):
+            break
+    used = sum(len(ln) + 1 for ln in lines[header_end:] if ln.strip())
+    n = sum(1 for ln in lines[header_end:] if ln.startswith("-"))
+    return n, used, MEMORY_BUDGET
+
+
+def memory_usage() -> str:
+    """Usage meter for the system prompt (agent sees how full memory is)."""
+    path = _memory_path()
+    if not path.exists():
+        return "（记忆 0%，空）"
+    try:
+        n, used, budget = _memory_stats(path)
+    except OSError:
+        return "（记忆文件不可读）"
+    pct = min(999, int(used * 100 / budget))
+    return f"（记忆 {pct}% · {used}/{budget} 字符 · {n} 条；超 80% 先 memory_replace 合并同类再新增）"
+
+
 def memory_add(content: str, target: str = "MEMORY.md") -> str:
-    """Append a timestamped memory entry (Hermes memory action=add)."""
+    """Append a timestamped memory entry (Hermes memory action=add).
+
+    Enforces the MEMORY.md budget: once usage exceeds 80%, new entries are
+    refused with a usage meter — the agent must consolidate first via
+    memory_replace (Hermes' bounded-memory rule, no silent truncation).
+    """
     path = _memory_path()
     if target.lower() not in ("memory.md", "memory", "facts"):
         target = "MEMORY.md"
     path = path.parent / target if "/" not in target else path
     path.parent.mkdir(parents=True, exist_ok=True)
-    ts = time.strftime("%Y-%m-%d")
-    line = f"- [{ts}] {content.strip()}"
+    line = f"- [{time.strftime('%Y-%m-%d')}] {content.strip()}"
+    if path.exists():
+        n, used, budget = _memory_stats(path)
+        if used > MEMORY_WARN_AT * budget:
+            return ("[error] 记忆库已满（{} 条 · {}% 用量），拒绝新增。"
+                    "先 memory_recall 看全量，再用 memory_replace 合并过时/同类条目腾出空间后重试。").format(n, min(999, used * 100 // budget))
     with path.open("a", encoding="utf-8") as f:
         f.write(line + "\n")
+    _notify_memory_changed()
     return f"[ok] 已记住: {content.strip()[:60]}"
 
 
 def memory_recall() -> str:
-    """Read back stored memory (Hermes memory recall)."""
+    """Read back stored memory (Hermes memory recall). Includes usage meter."""
     path = _memory_path()
     if not path.exists():
         return "(暂无记忆)"
-    text = path.read_text(encoding="utf-8")
-    return text.strip() or "(暂无记忆)"
+    text = path.read_text(encoding="utf-8").strip()
+    if not text:
+        return "(暂无记忆)"
+    try:
+        meter = memory_usage()
+    except Exception:
+        meter = ""
+    return f"{text}\n\n{meter}".strip()
 
 
 def memory_replace(old: str, new: str) -> str:
@@ -77,6 +154,7 @@ def memory_replace(old: str, new: str) -> str:
         return f"[error] 未找到包含 '{old[:40]}' 的条目"
     updated = text.replace(old, new)
     path.write_text(updated, encoding="utf-8")
+    _notify_memory_changed()
     return f"[ok] 已更新记忆"
 
 
@@ -90,6 +168,7 @@ def memory_remove(content: str) -> str:
     if len(kept) == len(lines):
         return f"[error] 未找到包含 '{content[:40]}' 的条目"
     path.write_text("\n".join(kept) + "\n", encoding="utf-8")
+    _notify_memory_changed()
     return f"[ok] 已删除相关记忆"
 
 
@@ -121,8 +200,7 @@ def skill_create(name: str, description: str, instructions: str = "") -> str:
         f"---\nname: {safe}\ndescription: {desc}\n---\n\n"
         f"# {safe}\n\n"
         f"## 何时使用\n{desc}\n\n"
-        f"## 做法\n{instructions.strip()}\n\n"
-        f"exec: \n"
+        f"## 做法\n{instructions.strip()}\n"
     )
     (target / "SKILL.md").write_text(body, encoding="utf-8")
     return f"[ok] 已创建技能 {safe}（SKILL.md 已写入）"
@@ -266,11 +344,27 @@ SKILL_IMPROVE_DEF = {
     },
 }
 
+MEMORY_REMOVE_DEF = {
+    "type": "function",
+    "function": {
+        "name": "memory_remove",
+        "description": "删除一条包含指定内容的记忆条目（先 memory_recall 找到原文再删）。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "content": {"type": "string", "description": "要删除的记忆中包含的文字"},
+            },
+            "required": ["content"],
+        },
+    },
+}
+
 
 LEARNING_TOOLS: dict[str, dict] = {
     "memory_add": {"def": MEMORY_ADD_DEF, "fn": memory_add},
     "memory_recall": {"def": MEMORY_RECALL_DEF, "fn": memory_recall},
     "memory_replace": {"def": MEMORY_REPLACE_DEF, "fn": memory_replace},
+    "memory_remove": {"def": MEMORY_REMOVE_DEF, "fn": memory_remove},
     "skill_create": {"def": SKILL_CREATE_DEF, "fn": skill_create},
     "skill_improve": {"def": SKILL_IMPROVE_DEF, "fn": skill_improve},
 }

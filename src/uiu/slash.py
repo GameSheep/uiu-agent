@@ -131,6 +131,9 @@ def _memory(args: str, ctx: SlashContext):
         return "用法：/memory <内容>"
     try:
         _append_md(ctx.ws.root / "MEMORY.md", note)
+        # 热刷新运行期会话（与 memory_add 同一钩子）
+        from .learning import notify_memory_changed as _notify
+        _notify()
     except OSError as e:
         return f"[error] 写入失败: {e}"
     return "(appended to MEMORY.md)"
@@ -186,6 +189,115 @@ def _sessions_cmd(args: str, ctx: SlashContext):
         for s in items)
 
 
+@command("search", "在已保存会话里关键词检索（/search <关键词>）")
+def _search(args: str, ctx: SlashContext):
+    from . import sessions as _sessions
+    if not args.strip():
+        return "用法：/search <关键词>（空格分隔的词全部匹配）"
+    hits = _sessions.search_sessions(ctx.ws.root, args.strip())
+    return _sessions.format_search_results(hits)
+
+
+def _summarizer_for(ctx: SlashContext):
+    """LLM summarizer bound to ctx client; None when no usable client (→纯截断)."""
+    client = getattr(ctx, "client", None)
+    model = getattr(ctx, "model", "") or ""
+    cfg = getattr(ctx, "cfg", None)
+    if client is None or not model:
+        return None
+
+    def _summarize(old: list[dict]) -> str:
+        from .agent import run_turn
+        prompt = ("把下面的历史对话压缩成要点式中文摘要，保留：已解决的问题、"
+                  "用户的偏好与决定、未完成事项、重要事实与路径。省略客套与工具细节。"
+                  "最后另起一段 [MEMORY] 列出值得跨会话记住的用户偏好/事实（没有则写无）。")
+        body = "\n".join(
+            (m.get("content") or "")[:800]
+            for m in old
+            if m.get("role") in ("user", "assistant")
+        )
+        msgs = [{"role": "user", "content": f"{prompt}\n\n<history>\n{body[:30000]}\n</history>"}]
+        # tool_schemas: 摘要轮不给工具（无歧义），省 token 又避免节外生枝
+        return run_turn(client, msgs, [], model=model, cfg=cfg, skills=[])
+
+    return _summarize
+
+
+@command("compact", "压缩旧对话为摘要（旧轮先自动存档，不丢历史）")
+def _compact(args: str, ctx: SlashContext):
+    from . import sessions as _sessions
+    if ctx.messages is None:
+        return "(网关会话自动维护，无需手动 compact)"
+    msgs = ctx.messages
+    if len(msgs) <= 3:
+        return f"(对话还短（{len(msgs)} 条），暂无需压缩)"
+    summarizer = _summarizer_for(ctx)
+    if summarizer is None:
+        # 无可用 client：走现有纯截断兜底（compact_messages 无 summarizer 路径）
+        compacted = _sessions.compact_messages(msgs)
+        if compacted is msgs:
+            return "(对话未超预算或太短，无需压缩)"
+        ctx.messages[:] = compacted
+        return f"(上下文已压缩（截断模式）：{len(msgs)} → {len(compacted)} 条；用 /search 可检索已存会话)"
+    # 先存档即将被压缩掉的旧轮（只留最近 1/3）——不丢历史
+    old = [m for m in msgs if m.get("role") != "system"]
+    keep_n = max(2, len(old) // 3)
+    archived = old[:-keep_n]
+    if not archived:
+        return "(旧轮太少，跳过)"
+    compacted = _sessions.compact_messages(msgs, summarizer=summarizer)
+    if compacted is msgs:
+        return "(压缩后未变化，跳过)"
+    # memory flush：摘要里的 [MEMORY] 段 → memory_add 沉淀（OpenClaw compaction.memoryFlush）
+    flushed = 0
+    try:
+        summary_msg = next((m for m in compacted if m.get("role") == "user"
+                            and isinstance(m.get("content"), str)
+                            and "[MEMORY]" in m["content"]), None)
+        if summary_msg is not None:
+            from .learning import memory_add as _mem_add
+            seg = summary_msg["content"].split("[MEMORY]", 1)[1]
+            for ln in seg.splitlines():
+                ln = ln.strip().lstrip("- ").strip()
+                if ln and ln != "无" and not ln.startswith("["):
+                    out = _mem_add(ln)
+                    if out.startswith("[ok]"):
+                        flushed += 1
+    except Exception:
+        pass
+    # 存档被压缩掉的轮次（auto-compact-*），随后替换活动上下文
+    try:
+        import time as _t
+        snap = f"auto-compact-{_t.strftime('%m%d-%H%M%S')}"
+        _sessions.save_session(ctx.ws.root, snap, [m for m in msgs if m.get("role") == "system"] + archived)
+        ctx.messages[:] = compacted
+        extra = f"，沉淀 {flushed} 条记忆" if flushed else ""
+        return f"(旧轮已 LLM 摘要{extra}：{len(archived)} 轮存档到 {snap}，当前上下文 {len(compacted)} 条)"
+    except Exception as e:
+        return f"[error] {type(e).__name__}: {e}"
+
+
+@command("suggestions", "查看/接受自动化建议（list/accept/dismiss <id>）")
+def _suggestions(args: str, ctx: SlashContext):
+    from . import suggestions as _sug
+    parts = args.split(None, 1)
+    sub = parts[0] if parts else "list"
+    rest = parts[1] if len(parts) > 1 else ""
+    root = ctx.ws.root
+    if sub == "list" or not parts:
+        items = _sug.scan_suggestions(root)
+        return _sug.format_suggestions(items)
+    if sub == "accept":
+        if not rest.strip():
+            return "用法：/suggestions accept <id>"
+        return _sug.accept_suggestion(root, rest.strip())
+    if sub == "dismiss":
+        if not rest.strip():
+            return "用法：/suggestions dismiss <id>"
+        return _sug.dismiss_suggestion(root, rest.strip())
+    return "用法：/suggestions [list|accept <id>|dismiss <id>]"
+
+
 @command("cron", "定时任务（add/list/rm/on/off/run/tick）")
 def _cron(args: str, ctx: SlashContext):
     from . import cron as _cron
@@ -205,16 +317,21 @@ def _cron(args: str, ctx: SlashContext):
             lines.append(f"- {j['name']} [{flag}] {j['schedule']} 下次{nxt}\n  {j['task'][:80]}")
         return "\n".join(lines)
     if sub == "add":
-        # /cron add <名字> <schedule...> <任务>  — schedule 取第二段起按规则解析
+        # /cron add <名字> <schedule...> <任务> — schedule 取第二段起按规则解析
+        # 任务以 ! 开头 = shell 任务（Hermes no_agent，零 token），如 /cron add 备份 1d "!xcopy ..."
         segs = rest.split(None, 2)
         if len(segs) < 3:
-            return "用法：/cron add <名字> <30m|2h|daily 09:00|'M H * * *'|once ISO> <任务>"
+            return "用法：/cron add <名字> <30m|2h|daily 09:00|'M H * * *'|once ISO> <任务>（任务以 ! 开头为 shell 命令）"
         name, sched, task = segs
+        run_shell = task.startswith("!")
+        if run_shell:
+            task = task[1:].lstrip()
         try:
-            job = _cron.add_job(root, name, sched, task)
+            job = _cron.add_job(root, name, sched, task, run_shell=run_shell)
         except ValueError as e:
             return f"[error] {e}"
-        return f"(added {job['id']}：{name} @ {sched})"
+        kind = "shell" if run_shell else "agent"
+        return f"(added {job['id']}：{name} @ {sched} · {kind})"
     if sub in ("rm", "remove"):
         return "(removed)" if _cron.remove_job(root, rest.strip()) else f"(no such job: {rest})"
     if sub in ("on", "enable"):

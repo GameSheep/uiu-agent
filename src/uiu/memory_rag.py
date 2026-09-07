@@ -201,35 +201,49 @@ def recall_semantic(query: str, n_results: int = 5) -> str:
 def add_memory(text: str, title: str = "") -> str:
     """Add a new memory and index it in the vector store.
 
-    text: memory content
-    title: optional title/category
+    The plain-text entry is appended to the SAME MEMORY.md used by
+    memory_add (learning), using the same `- [date]` line format, so the
+    two memory tools never diverge. The vector index is an enhancement.
     """
     vm = get_vector_memory()
 
     # Locate workspace memory file consistently (env > cwd > home)
     memory_path = _workspace_memory_path()
 
-    # Append to MEMORY.md
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
-    entry = f"\n### {title or '记忆'} ({timestamp})\n{text}\n"
+    # Append to MEMORY.md using learning's line format: - [YYYY-MM-DD] text
+    timestamp = datetime.now().strftime("%Y-%m-%d")
+    entry = f"- [{timestamp}] {text.strip()}\n"
 
     try:
         if memory_path.exists():
             existing = memory_path.read_text(encoding="utf-8")
             memory_path.write_text(existing + entry, encoding="utf-8")
         else:
+            memory_path.parent.mkdir(parents=True, exist_ok=True)
             memory_path.write_text(f"# MEMORY\n{entry}", encoding="utf-8")
+    except Exception:
+        return "[error] 写入 MEMORY.md 失败"
+
+    # 通知运行期会话热刷新（与 learning.memory_add 同一钩子）
+    try:
+        from .learning import notify_memory_changed as _notify
+        _notify()
     except Exception:
         pass
 
     # Index in vector store
-    if vm.add(text, metadata={"title": title or "记忆", "source": "manual"}):
-        return f"[ok] 已添加记忆: {title or text[:30]}"
-    return f"[ok] 已添加到 MEMORY.md（向量索引未安装）"
+    if vm.add(text.strip(), metadata={"title": title or "记忆", "source": "manual"}):
+        return f"[ok] 已添加记忆: {title or text.strip()[:30]}"
+    return "[ok] 已添加到 MEMORY.md（向量索引未安装，可 pip install uiu[rag]）"
 
 
 def _workspace_memory_path() -> Path:
-    """Locate the active workspace's MEMORY.md (env > cwd/workspace > ~/workspace)."""
+    """Locate the active workspace's MEMORY.md (same file as learning.memory_add)."""
+    try:
+        from .learning import _memory_path as _learning_memory_path
+        return _learning_memory_path()
+    except Exception:
+        pass
     import os as _os
     env = _os.environ.get("UIU_WORKSPACE")
     candidates = []

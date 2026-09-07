@@ -222,6 +222,37 @@ def _ocr_full_screen() -> list[dict]:
     return _ocr_rapidocr_full()
 
 
+def _screenshot(path: str | None = None) -> str:
+    """Take a full-screen screenshot, save to a temp PNG, return its path."""
+    import tempfile
+    import pyautogui
+    save_path = path or str(Path(tempfile.gettempdir()) / "uiu_screenshot.png")
+    pyautogui.screenshot().save(save_path)
+    return save_path
+
+
+def _ocr_image(image_path: str) -> list[dict]:
+    """OCR a saved screenshot file (RapidOCR). Items use text/x/y/w/h/score/cx/cy."""
+    engine = _get_rapidocr_engine()
+    if engine is None:
+        return []
+    result, _ = engine(str(image_path))
+    items = []
+    for item in result or []:
+        box, text, score = item
+        x1, y1 = box[0]
+        x2, y2 = box[2]
+        items.append({
+            "text": text,
+            "x": int(x1), "y": int(y1),
+            "w": int(x2 - x1), "h": int(y2 - y1),
+            "score": float(score),
+            "cx": (x1 + x2) / 2,
+            "cy": (y1 + y2) / 2,
+        })
+    return items
+
+
 def _ocr_region(x: int, y: int, w: int, h: int) -> list[dict]:
     """OCR a region (WinRT preferred)."""
     items = _ocr_winrt_region(x, y, w, h)

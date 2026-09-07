@@ -220,15 +220,12 @@ async def mcp_call_tool(tool_name: str, arguments_json: str) -> str:
 def mcp_call_tool_sync(tool_name: str, arguments_json: str) -> str:
     """Call an MCP tool (sync wrapper for tool dispatch)."""
     try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            # We're in an async context, create a new thread
-            import concurrent.futures
-            with concurrent.futures.ThreadPoolExecutor() as pool:
-                future = pool.submit(asyncio.run, mcp_call_tool(tool_name, arguments_json))
-                return future.result(timeout=30)
-        else:
-            return loop.run_until_complete(mcp_call_tool(tool_name, arguments_json))
+        asyncio.get_running_loop()
     except RuntimeError:
-        # No event loop, create one
+        # No running loop → run directly (creates + closes its own loop)
         return asyncio.run(mcp_call_tool(tool_name, arguments_json))
+    # We're inside a running loop → run in a worker thread with its own loop
+    import concurrent.futures
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(asyncio.run, mcp_call_tool(tool_name, arguments_json))
+        return future.result(timeout=30)

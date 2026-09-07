@@ -27,9 +27,16 @@ class WeComAdapter(BaseChannelAdapter):
         self.corpid = self.config.options.get("corpid", "")
         self.corpsecret = self.config.options.get("corpsecret", "")
         self.agentid = self.config.options.get("agentid", "")
+        # 官方回调加密：配置 token + aes_key 后启用验签解密；否则明文兼容
+        self.callback_token = self.config.options.get("token", "")
+        self.encoding_aes_key = self.config.options.get("aes_key", "") or self.config.options.get("encoding_aes_key", "")
         self._token = None
         self._token_expires = 0
         self.queue: asyncio.Queue = asyncio.Queue()
+
+    @property
+    def crypto_enabled(self) -> bool:
+        return bool(self.callback_token and self.encoding_aes_key)
 
     def _get_access_token(self) -> str:
         if self._token and time.time() < self._token_expires - 60:
@@ -62,12 +69,52 @@ class WeComAdapter(BaseChannelAdapter):
             except asyncio.TimeoutError:
                 continue
 
-    def handle_webhook(self, body: dict) -> dict:
+    def verify_url(self, query: dict) -> dict:
+        """WeCom GET URL verification: validate msg_signature, echo echostr.
+
+        Only enforced when crypto is configured; otherwise the previous
+        permissive behaviour is preserved for gateway-token-authenticated setups.
+        """
+        echo = query.get("echostr", "")
+        if not echo:
+            return {"errcode": 1, "errmsg": "no echostr"}
+        if not self.crypto_enabled:
+            return {"errcode": 0, "errmsg": "ok", "echostr": echo}
+        from .wecom_crypto import verify_signature
+        ok = verify_signature(
+            self.callback_token, query.get("timestamp", ""),
+            query.get("nonce", ""), echo, query.get("msg_signature", ""),
+        )
+        if not ok:
+            return {"errcode": 1, "errmsg": "signature verify failed"}
+        return {"errcode": 0, "errmsg": "ok", "echostr": echo}
+
+    def handle_webhook(self, body: dict, query: dict | None = None) -> dict:
         """Called by HTTP server when WeCom POSTs a callback.
 
-        注：企业微信官方回调是 AES 加密+签名，这里只收网关已鉴权
-        （UIU_GATEWAY_TOKEN）的明文转发明文，仍做类型/长度校验防伪造放大。
+        When token + aes_key are configured, the official protocol is enforced:
+        the body is `{"encrypt": ...}`, verified by msg_signature and decrypted
+        with AES-CBC. Without crypto config we accept gateway-authenticated
+        plaintext (legacy), still validating type/length.
         """
+        query = query or {}
+        if not isinstance(body, dict):
+            return {"errcode": 1, "errmsg": "bad body"}
+        # 官方加密模式：验签 + AES 解密
+        if self.crypto_enabled:
+            encrypt = body.get("encrypt", "")
+            if not encrypt:
+                return {"errcode": 1, "errmsg": "missing encrypt"}
+            try:
+                from .wecom_crypto import decrypt_encrypt_msg
+                plain = decrypt_encrypt_msg(
+                    encrypt, self.encoding_aes_key, self.corpid,
+                    self.callback_token, query.get("timestamp", ""),
+                    query.get("nonce", ""), query.get("msg_signature", ""),
+                )
+                body = json.loads(plain)
+            except Exception as e:
+                return {"errcode": 1, "errmsg": f"decrypt failed: {e}"}
         if not isinstance(body, dict):
             return {"errcode": 1, "errmsg": "bad body"}
         if body.get("MsgType") == "text":

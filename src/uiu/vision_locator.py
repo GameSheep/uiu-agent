@@ -12,7 +12,7 @@ def capture_screen(region: tuple[int, int, int, int] | None = None):
 
 
 def get_screen_elements(region: tuple[int, int, int, int] | None = None) -> list[dict[str, Any]]:
-    from screen_tools import _ocr_full_screen
+    from .screen_tools import _ocr_full_screen
 
     all_items = _ocr_full_screen()
     if not region:

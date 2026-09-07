@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import os
 import asyncio
+import atexit
 
 
 def browser_use(task: str, url: str = "", new_session: bool = False) -> str:
@@ -81,6 +82,23 @@ def browser_open(url: str) -> str:
 # snapshot/click/type 对齐）：装了 playwright 即用，没装则快照自动降级 web_extract。
 
 _PAGE = None  # playwright Page 单例（懒建）
+
+
+def _shutdown_browser() -> None:
+    """Close the shared playwright browser on process exit (avoid chromium leak)."""
+    global _PAGE
+    if _PAGE is None:
+        return
+    try:
+        pw = getattr(_PAGE, "_pw", None)
+        if pw is not None:
+            pw.stop()
+    except Exception:
+        pass
+    _PAGE = None
+
+
+atexit.register(_shutdown_browser)
 
 
 def _page():

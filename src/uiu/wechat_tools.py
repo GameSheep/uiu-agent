@@ -92,7 +92,7 @@ def click_point(x: int, y: int, clicks: int = 1, button: str = "left", delay: fl
 
 def input_text(text: str):
     import pyautogui
-    from system_tools import clipboard_set
+    from .system_tools import clipboard_set
 
     clipboard_set(text)
     time.sleep(0.1)
@@ -127,7 +127,7 @@ def filter_by_zone(items: list[dict], left: int, top: int, right: int, bottom: i
 
 def execute_8step_send(window_title: str, target_name: str, message: str) -> str:
     import pyautogui
-    from screen_tools import _ocr_full_screen
+    from .screen_tools import _ocr_full_screen
 
     trace: list[str] = []
 
@@ -247,3 +247,28 @@ SEND_WECHAT_DEF = {
         },
     },
 }
+
+
+WECHAT_TOOLS: dict[str, dict] = {
+    "send_wechat": {"def": SEND_WECHAT_DEF, "fn": send_wechat},
+}
+
+
+def wechat_tool_defs() -> list[dict]:
+    return [t["def"] for t in WECHAT_TOOLS.values()]
+
+
+def call_wechat_tool(name: str, arguments_json: str) -> str:
+    import json
+    if name not in WECHAT_TOOLS:
+        return f"[error] unknown wechat tool: {name}"
+    fn = WECHAT_TOOLS[name]["fn"]
+    try:
+        args = json.loads(arguments_json) if isinstance(arguments_json, str) else arguments_json
+        if not isinstance(args, dict):
+            return "[error] args must be object"
+        return fn(**args)
+    except TypeError as e:
+        return f"[error] bad arguments: {e}"
+    except Exception as e:
+        return f"[error] {type(e).__name__}: {e}"

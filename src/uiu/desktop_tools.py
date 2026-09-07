@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from gui_primitives import (
+from .gui_primitives import (
     mouse_click,
     mouse_drag,
     mouse_scroll,
@@ -13,17 +13,17 @@ from gui_primitives import (
     press_hotkey,
     press_key,
 )
-from vision_locator import (
+from .vision_locator import (
     locate_text_on_screen,
     scroll_and_find,
 )
-from window_manager import (
+from .window_manager import (
     find_window,
     focus_window,
     launch_application,
     list_visible_windows,
 )
-from wechat_tools import SEND_WECHAT_DEF, send_wechat
+from .wechat_tools import SEND_WECHAT_DEF, send_wechat
 
 DESKTOP_TOOL_SCHEMAS: list[dict[str, Any]] = [
     {

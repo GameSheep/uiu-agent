@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import subprocess
 import time
 
 
@@ -107,15 +106,31 @@ def set_window_state(hwnd: int, action: str) -> str:
         return f"[error] 调整窗口状态失败: {type(e).__name__}: {e}"
 
 
+# Shell 元字符：出现任何一个即拒绝（防注入，不经过 shell）
+_SHELL_META = set("&|<>^`$(){};\"'\\\n\r\t")
+
+
 def launch_application(target: str) -> str:
+    """Launch a program / open a file / open a URL. No shell involved.
+
+    Validation: non-empty, length-bounded, no shell metacharacters; URLs must
+    use an http(s) scheme (mirrors open_url's guardrail).
+    """
+    target = (target or "").strip()
+    if not target:
+        return "[error] target 不能为空"
+    if len(target) > 2000:
+        return "[error] target 过长"
+    if any(ch in _SHELL_META for ch in target):
+        return "[error] target 含非法字符（shell 元字符），已拒绝"
+    low = target.lower()
+    if low.startswith(("javascript:", "data:", "vbscript:", "file:", "about:")):
+        return "[error] 不支持的 URL scheme（仅 http/https）"
     try:
         os.startfile(target)
         time.sleep(0.8)
         return f"[ok] 启动命令已触发: {target}"
-    except Exception:
-        try:
-            subprocess.Popen(target, shell=True)
-            time.sleep(0.8)
-            return f"[ok] 通过命令行启动: {target}"
-        except Exception as e2:
-            return f"[error] 启动应用失败: {e2}"
+    except OSError:
+        return f"[error] 启动应用失败: 无法打开 {target!r}"
+    except Exception as e:
+        return f"[error] 启动应用失败: {type(e).__name__}: {e}"

@@ -65,3 +65,37 @@ def mcp_tool_defs_list() -> list[dict]:
         except Exception:
             pass
     return [t["def"] for t in MCP_TOOLS.values()]
+
+
+def try_connect_all(cfg) -> list[str]:
+    """Connect to all configured MCP servers (best-effort, never raises).
+
+    Call once at startup (TUI / gateway). After a successful connect the
+    dynamic MCP tools appear in tool_defs() on the next refresh.
+
+    Returns a list of human-readable status lines for the caller to print.
+    """
+    configs = getattr(cfg, "mcp_servers", None) or []
+    if not configs:
+        return []
+    status: list[str] = []
+    try:
+        import asyncio
+        from .mcp_client import get_mcp_manager
+        manager = get_mcp_manager()
+        loop = asyncio.new_event_loop()
+        try:
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(manager.connect_all(configs))
+        finally:
+            loop.close()
+        connected = list(manager.servers.keys())
+        if connected:
+            refresh_mcp_tools()
+            n = len(get_mcp_tools())
+            status.append(f"· MCP 已连接 {len(connected)} 个服务器，注入 {n} 个工具: {', '.join(connected)}")
+        else:
+            status.append("· MCP 未连接任何服务器（配置了但全部失败）")
+    except Exception as e:
+        status.append(f"· MCP 连接失败（已跳过）: {type(e).__name__}: {e}")
+    return status

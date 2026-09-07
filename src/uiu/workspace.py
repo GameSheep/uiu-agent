@@ -83,7 +83,12 @@ class Workspace:
         if self.user:
             parts.append(f"# USER\n{self.user}")
         if self.memory:
-            parts.append(f"# MEMORY (across sessions)\n{self.memory}")
+            try:
+                from .learning import memory_usage as _usage
+                meter = _usage()
+            except Exception:
+                meter = ""
+            parts.append(f"# MEMORY (across sessions) {meter}\n{self.memory}")
         idx = self.skills_index()
         if idx:
             parts.append(
@@ -114,6 +119,21 @@ class Workspace:
         if m:
             return m.group(1).strip()[:32]
         return "agent"
+
+    def reload_memory(self) -> None:
+        """Re-read MEMORY.md from disk so running-session context stays fresh.
+
+        Called after memory_add / add_memory / /memory writes so the next
+        system prompt includes the new entry without a restart.
+        """
+        path = self.root / "MEMORY.md"
+        if not path.exists():
+            self.memory = ""
+            return
+        try:
+            self.memory = path.read_text(encoding="utf-8")
+        except OSError:
+            pass
 
 
 def find_workspace() -> Path:

@@ -55,9 +55,8 @@ class TelegramAdapter(BaseChannelAdapter):
                 if not text:
                     continue
                 chat_id = str(msg["chat"]["id"])
-                # strip commands we don't handle
-                if text.startswith("/"):
-                    continue
+                # 透传给 gateway：slash 命令由 gateway.on_message 的注册表分发（与 TUI 同款），
+                # 这里不做过滤，否则网关 slash 对 telegram 永不生效
                 if self.on_message:
                     self.on_message(chat_id, text)
 

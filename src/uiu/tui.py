@@ -8,6 +8,7 @@ from pathlib import Path
 
 from openai import OpenAI
 from prompt_toolkit import PromptSession
+from prompt_toolkit.completion import WordCompleter
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.patch_stdout import patch_stdout
 from rich.console import Console
@@ -31,19 +32,16 @@ def _g(glyph: str, ascii_fb: str) -> str:
 
 # ---------- formatting helpers ----------
 
-SLASH_HELP = """\
-[bold]Available commands[/bold]
-  /help              show this help
-  /skills            list loaded skills
-  /skills reload     reload skills from disk
-  /tools             list built-in tools
-  /memory <text>     append a note to MEMORY.md
-  /soul <text>       append a line to SOUL.md (edit file to arrange)
-  /identity          print IDENTITY.md
-  /model             how to switch model (run `uiu model` in shell)
-  /clear             clear conversation history
-  /quit, /exit       exit
-"""
+
+def _command_completer(ws) -> WordCompleter | None:
+    """Tab-complete: slash commands, tool names, skill names (dynamic)."""
+    try:
+        from .slash import REGISTRY as _REGISTRY
+        words = [f"/{name}" for name in _REGISTRY]
+        words += [f"/{name} " for name in _REGISTRY]  # 命令后带空格便于直接输参数
+        return WordCompleter(sorted(set(words)), ignore_case=True)
+    except Exception:
+        return None
 
 
 def _print_assistant_header(name: str = "agent") -> None:
@@ -202,6 +200,13 @@ def repl(client: OpenAI, ws: Workspace, model: str = "", cfg=None, app_cfg=None)
     except Exception:
         pass
 
+    # 记忆热刷新：agent 调用 memory_add 等写入 MEMORY.md 后立即更新本会话上下文
+    try:
+        from .learning import register_memory_hook as _reg_mem_hook
+        _reg_mem_hook(ws.reload_memory)
+    except Exception:
+        pass
+
     def _tui_ask(question: str, options: list[str] | None) -> str:
         console.print(f"\n[bold yellow]{_g('❓', '?')} {question}[/bold yellow]")
         if options:
@@ -241,7 +246,7 @@ def repl(client: OpenAI, ws: Workspace, model: str = "", cfg=None, app_cfg=None)
             if session is not None:
                 try:
                     with patch_stdout():
-                        user_input = session.prompt("▌ you> ")
+                        user_input = session.prompt("▌ you> ", completer=_command_completer(ws))
                 except Exception:
                     # patch_stdout/session unusable on this console → degrade
                     session = None
@@ -380,6 +385,15 @@ def repl(client: OpenAI, ws: Workspace, model: str = "", cfg=None, app_cfg=None)
                     ws = load_workspace(ws.root)
                     tool_schemas = _rebuild_skill_schemas(ws)
                     _autosave()
+                    # Hermes /suggestions usage 来源：顺带扫一遍自动化建议
+                    try:
+                        from .suggestions import scan_suggestions
+                        n_sug = len(scan_suggestions(ws.root))
+                        if n_sug:
+                            console.print(
+                                f"[dim]· {n_sug} 条自动化建议待确认 → /suggestions 查看[/dim]")
+                    except Exception:
+                        pass
                 except Exception as e:
                     console.print(f"[dim](nudge skipped: {e})[/dim]")
         except KeyboardInterrupt:

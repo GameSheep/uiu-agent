@@ -69,10 +69,36 @@ def mouse_scroll(clicks: int, x: int | None = None, y: int | None = None) -> str
         return f"[error] 鼠标滚轮失败: {type(e).__name__}: {e}"
 
 
+def _valid_key_names() -> set[str]:
+    """Return the set of key names pyautogui can press (lowercase)."""
+    try:
+        ag = _get_pyautogui()
+        return {k.lower() for k in getattr(ag, "KEYBOARD_KEYS", [])}
+    except Exception:
+        # pyautogui unavailable: fall back to a conservative allowlist
+        base = {
+            "enter", "esc", "escape", "tab", "space", "backspace", "delete",
+            "ctrl", "control", "alt", "shift", "win", "cmd", "up", "down",
+            "left", "right", "home", "end", "pageup", "pagedown",
+            "a", "c", "v", "x", "z", "y", "f1", "f2", "f3", "f4", "f5",
+        }
+        return base
+
+
 def press_hotkey(keys: list[str]) -> str:
+    if not keys:
+        return "[error] 按键列表为空"
+    if len(keys) > 4:
+        return "[error] 组合键最多 4 个"
+    clean_keys = [str(k).lower().strip() for k in keys]
+    if any(not k for k in clean_keys):
+        return "[error] 按键名不能为空"
+    valid = _valid_key_names()
+    bad = [k for k in clean_keys if k not in valid]
+    if bad:
+        return f"[error] 非法按键名: {', '.join(bad)}"
     ag = _get_pyautogui()
     try:
-        clean_keys = [k.lower().strip() for k in keys]
         ag.hotkey(*clean_keys)
         time.sleep(0.15)
         return f"[ok] 已触发快捷键: {' + '.join(clean_keys)}"
@@ -81,15 +107,24 @@ def press_hotkey(keys: list[str]) -> str:
 
 
 def press_key(key_name: str, presses: int = 1, interval: float = 0.1) -> str:
+    name = (key_name or "").lower().strip()
+    if not name:
+        return "[error] 按键名不能为空"
+    valid = _valid_key_names()
+    if name not in valid:
+        return f"[error] 非法按键名: {name}"
     ag = _get_pyautogui()
     try:
-        ag.press(key_name.lower().strip(), presses=presses, interval=interval)
+        ag.press(name, presses=presses, interval=interval)
         return f"[ok] 已按键 '{key_name}' {presses} 次"
     except Exception as e:
         return f"[error] 单键输入失败: {type(e).__name__}: {e}"
 
 
 def paste_text(text: str, clear_before: bool = False) -> str:
+    text = text or ""
+    if len(text) > 100 * 1024:
+        return "[error] 粘贴文本过长（上限 100KB）"
     ag = _get_pyautogui()
     try:
         import win32clipboard

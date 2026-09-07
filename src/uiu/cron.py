@@ -46,12 +46,79 @@ def save_jobs(workspace: Path, jobs: list[dict]) -> None:
 
 _INTERVAL_RE = re.compile(r"^(\d+)\s*([smhd])$", re.I)
 _DAILY_RE = re.compile(r"^daily\s+(\d{1,2}):(\d{2})$", re.I)
-_CRON_RE = re.compile(r"^(\d{1,2})\s+(\d{1,2})\s+\*\s+\*\s+\*$")
+_CRON_RE = re.compile(r"^(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)$")
 _ONCE_RE = re.compile(r"^once\s+(.+)$", re.I)
 
 
+def _parse_cron_field(field: str, lo: int, hi: int, name: str) -> list[int]:
+    """Parse one cron field: int, range (a-b), step (*/n or a-b/n), list (a,b).
+    Returns the set of matching values in [lo, hi]."""
+    values: set[int] = set()
+    field = (field or "").strip()
+    if field == "":
+        raise ValueError(f"cron {name} 字段为空")
+    for part in field.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        step = 1
+        if "/" in part:
+            part, _, step_s = part.partition("/")
+            try:
+                step = int(step_s)
+            except ValueError:
+                raise ValueError(f"cron {name} 步长非法: {step_s}")
+            if step < 1:
+                raise ValueError(f"cron {name} 步长须为正整数")
+        if part == "*":
+            lo_v, hi_v = lo, hi
+        elif "-" in part and not part.startswith("-"):
+            a, _, b = part.partition("-")
+            try:
+                lo_v, hi_v = int(a), int(b)
+            except ValueError:
+                raise ValueError(f"cron {name} 范围非法: {part}")
+        else:
+            try:
+                v = int(part)
+            except ValueError:
+                raise ValueError(f"cron {name} 字段非法: {part}")
+            if not (lo <= v <= hi):
+                raise ValueError(f"cron {name} 超出范围 {lo}-{hi}: {v}")
+            lo_v = hi_v = v
+        if lo_v < lo or hi_v > hi or lo_v > hi_v:
+            raise ValueError(f"cron {name} 超出范围 {lo}-{hi}: {part}")
+        for v in range(lo_v, hi_v + 1, step):
+            values.add(v)
+    if not values:
+        raise ValueError(f"cron {name} 无有效值")
+    return sorted(values)
+
+
+def _cron_spec_to_parsed(fields: list[str]) -> dict:
+    """Five-field cron → parsed dict. All-star dom/mon/dow folds to 'daily'."""
+    minute, hour, dom, mon, dow = fields
+    minutes = _parse_cron_field(minute, 0, 59, "分")
+    hours = _parse_cron_field(hour, 0, 23, "时")
+    doms = _parse_cron_field(dom, 1, 31, "日")
+    mons = _parse_cron_field(mon, 1, 12, "月")
+    dows = _parse_cron_field(dow, 0, 7, "周")
+    # cron 规范：7 等价于 0（周日）
+    dows = sorted({0 if d == 7 else d for d in dows})
+    # 兼容旧语义：全 * 的 5 段 cron 等价于 daily
+    if dom == "*" and mon == "*" and dow == "*":
+        if len(minutes) == 1 and len(hours) == 1:
+            return {"kind": "daily", "hour": hours[0], "minute": minutes[0]}
+    return {"kind": "cron", "minutes": minutes, "hours": hours,
+            "doms": doms, "mons": mons, "dows": dows}
+
+
 def parse_schedule(spec: str) -> dict:
-    """Parse a schedule spec into {kind, ...}. Raises ValueError on bad input."""
+    """Parse a schedule spec into {kind, ...}. Raises ValueError on bad input.
+
+    Supports: `30m/2h/1d/45s`, `daily HH:MM`, full 5-field cron
+    (`M H dom mon dow` with `*/n`, ranges and lists), `once <ISO>`.
+    """
     s = (spec or "").strip()
     m = _INTERVAL_RE.match(s)
     if m:
@@ -65,10 +132,7 @@ def parse_schedule(spec: str) -> dict:
         return {"kind": "daily", "hour": h, "minute": mi}
     m = _CRON_RE.match(s)
     if m:
-        mi, h = int(m.group(1)), int(m.group(2))
-        if h > 23 or mi > 59:
-            raise ValueError("cron 分/时非法")
-        return {"kind": "daily", "hour": h, "minute": mi}
+        return _cron_spec_to_parsed(list(m.groups()))
     m = _ONCE_RE.match(s)
     if m:
         try:
@@ -76,7 +140,29 @@ def parse_schedule(spec: str) -> dict:
         except ValueError:
             raise ValueError("once 时间须为 ISO 格式，如 once 2026-09-05T10:00:00")
         return {"kind": "once", "at": ts}
-    raise ValueError("schedule 支持：30m/2h/1d/45s、daily 09:00、'M H * * *'、once <ISO时间>")
+    raise ValueError("schedule 支持：30m/2h/1d/45s、daily 09:00、'M H dom mon dow'（支持 */n/范围/列表）、once <ISO时间>")
+
+
+def _cron_dow_matches(parsed_dows: list[int], py_weekday: int) -> bool:
+    """Match a Python weekday (0=Mon..6=Sun) against normalized cron dow values.
+
+    cron dow: 0/7=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat.
+    So python weekday w ↔ cron dow (w + 1) % 7.
+    """
+    cron_dow = (py_weekday + 1) % 7
+    return cron_dow in parsed_dows
+
+
+def _cron_next_match(parsed: dict, after_ts: float) -> float:
+    """Earliest datetime after after_ts matching the 5-field cron rule."""
+    dt = datetime.fromtimestamp(after_ts).replace(second=0, microsecond=0) + timedelta(minutes=1)
+    for _ in range(60 * 24 * 366):  # 最多扫一年，防死循环
+        if dt.month in parsed["mons"] and dt.day in parsed["doms"] \
+                and _cron_dow_matches(parsed["dows"], dt.weekday()) \
+                and dt.hour in parsed["hours"] and dt.minute in parsed["minutes"]:
+            return dt.timestamp()
+        dt += timedelta(minutes=1)
+    raise ValueError("cron 在一年内无匹配时间（检查字段）")
 
 
 def next_run_after(parsed: dict, after_ts: float | None = None) -> float:
@@ -86,6 +172,8 @@ def next_run_after(parsed: dict, after_ts: float | None = None) -> float:
         return after + parsed["seconds"]
     if kind == "once":
         return parsed["at"]
+    if kind == "cron":
+        return _cron_next_match(parsed, after)
     # daily
     dt = datetime.fromtimestamp(after).replace(hour=parsed["hour"], minute=parsed["minute"], second=0, microsecond=0)
     if dt.timestamp() <= after:
@@ -95,7 +183,7 @@ def next_run_after(parsed: dict, after_ts: float | None = None) -> float:
 
 # ---------- job ops ----------
 
-def add_job(workspace: Path, name: str, schedule: str, task: str) -> dict:
+def add_job(workspace: Path, name: str, schedule: str, task: str, run_shell: bool = False) -> dict:
     parsed = parse_schedule(schedule)  # 先校验，非法直接抛
     jobs = load_jobs(workspace)
     jid = f"job-{int(time.time())}-{len(jobs) + 1}"
@@ -103,6 +191,7 @@ def add_job(workspace: Path, name: str, schedule: str, task: str) -> dict:
     job = {
         "id": jid, "name": name, "schedule": schedule,
         "task": task, "enabled": True,
+        "run_shell": bool(run_shell),  # Hermes no_agent：脚本任务零 token，不跑 agent
         "created": now, "last_run": 0, "next_run": next_run_after(parsed, now),
     }
     jobs.append(job)
@@ -167,30 +256,58 @@ def _release_lock(workspace: Path) -> None:
         pass
 
 
-def run_job(workspace: Path, job: dict, timeout: int = 180) -> str:
-    """Run one job with a fresh agent loop. Returns output markdown path."""
-    from .config import load_config
-    from .llm import make_client
-    from .workspace import load_workspace
-    from .agent import run_turn
-    from .gateway import _build_tool_schemas
-
-    ws_path = Path(workspace)
-    cfg = load_config(ws_path)
-    ws = load_workspace(ws_path)
-    client = make_client(cfg.model)
-    messages = [
-        {"role": "system", "content": ws.system_prompt()},
-        {"role": "user", "content": f"[cron:{job.get('name')}] {job.get('task')}"},
-    ]
+def _run_shell_job(job: dict) -> str:
+    """Hermes no_agent 脚本任务：跑命令拿 stdout，零 LLM 零 token。"""
+    import subprocess
+    from ._sandbox import check_command, truncate_output
+    cmd = job.get("task", "").strip()
+    ok, msg = check_command(cmd)
+    if not ok:
+        return msg
     try:
-        reply = run_turn(
-            client=client, messages=messages,
-            tool_schemas=_build_tool_schemas(ws), skills=ws.skills,
-            model=cfg.model.default, cfg=cfg.model,
+        result = subprocess.run(
+            cmd, shell=True, capture_output=True, text=True,
+            timeout=300, stdin=subprocess.DEVNULL,
         )
+    except subprocess.TimeoutExpired:
+        return "[error] 命令超时（>300s）"
     except Exception as e:
-        reply = f"[cron error] {type(e).__name__}: {e}"
+        return f"[error] {type(e).__name__}: {e}"
+    out = result.stdout or ""
+    if result.stderr:
+        out += "\n[stderr]\n" + result.stderr
+    if result.returncode != 0:
+        out += f"\n[exit code: {result.returncode}]"
+    return truncate_output(out.strip() or "(no output)")
+
+
+def run_job(workspace: Path, job: dict, timeout: int = 180) -> str:
+    """Run one job with a fresh agent loop (or shell if run_shell). Returns output markdown path."""
+    ws_path = Path(workspace)
+    if job.get("run_shell"):
+        reply = _run_shell_job(job)
+    else:
+        from .config import load_config
+        from .llm import make_client
+        from .workspace import load_workspace
+        from .agent import run_turn
+        from .gateway import _build_tool_schemas
+
+        cfg = load_config(ws_path)
+        ws = load_workspace(ws_path)
+        client = make_client(cfg.model)
+        messages = [
+            {"role": "system", "content": ws.system_prompt()},
+            {"role": "user", "content": f"[cron:{job.get('name')}] {job.get('task')}"},
+        ]
+        try:
+            reply = run_turn(
+                client=client, messages=messages,
+                tool_schemas=_build_tool_schemas(ws), skills=ws.skills,
+                model=cfg.model.default, cfg=cfg.model,
+            )
+        except Exception as e:
+            reply = f"[cron error] {type(e).__name__}: {e}"
     ts = time.strftime("%Y%m%d_%H%M%S")
     out_dir = cron_dir(ws_path) / "output" / job["id"]
     out_dir.mkdir(parents=True, exist_ok=True)

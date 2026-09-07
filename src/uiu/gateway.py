@@ -16,6 +16,7 @@ import json
 import sys
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -41,6 +42,8 @@ class Gateway:
         self._lock = threading.Lock()
         self._pending: dict[str, "queue.Queue[str]"] = {}  # clarify 等待下一条消息
         self._local = threading.local()
+        # agent 调用线程池：run_turn 是同步的，不能阻塞共享 event loop
+        self._executor = ThreadPoolExecutor(max_workers=8, thread_name_prefix="gw-agent")
         # 可选网关鉴权：设 UIU_GATEWAY_TOKEN 后 webhook 需带 X-Gateway-Token
         import os as _os
         self._gateway_token = _os.environ.get("UIU_GATEWAY_TOKEN", "")
@@ -52,6 +55,12 @@ class Gateway:
         try:
             from .clarify import set_ask_handler as _set_ask
             _set_ask(self._ask_via_chat)
+        except Exception:
+            pass
+        # 记忆热刷新：memory_add 写入后，本 gateway 的 ws.memory 立即更新
+        try:
+            from .learning import register_memory_hook as _reg_mem_hook
+            _reg_mem_hook(ws.reload_memory)
         except Exception:
             pass
 
@@ -184,6 +193,14 @@ class Gateway:
             print("没有 enabled 的 channel。先: uiu channel add <name> --type <telegram|feishu|wecom>")
             return
 
+        # 启动时连接配置的 MCP 服务器（best-effort，失败不影响 serve）
+        try:
+            from .mcp_tools import try_connect_all as _mcp_connect
+            for line in _mcp_connect(self.cfg):
+                print(line, flush=True)
+        except Exception as e:
+            print(f"[gateway] MCP 初始化失败（忽略）: {type(e).__name__}: {e}", file=sys.stderr)
+
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
 
@@ -204,7 +221,12 @@ class Gateway:
                 def handler(chat_id, text):
                     with self._lock:
                         self._origin[chat_id] = ad.config.name
-                    orig_on_message(chat_id, text)
+                    # run agent off the event-loop thread: run_turn is synchronous
+                    # and would otherwise block every other adapter sharing the loop
+                    try:
+                        self._executor.submit(orig_on_message, chat_id, text)
+                    except RuntimeError:
+                        orig_on_message(chat_id, text)
                 return handler
             adapter.on_message = make_handler(adapter)
             self.adapters.append(adapter)
@@ -246,6 +268,7 @@ class Gateway:
             if http_server:
                 http_server.shutdown()
             loop.close()
+            self._executor.shutdown(wait=False, cancel_futures=True)
 
     def _start_http_server(self, port: int) -> ThreadingHTTPServer:
         gate = self
@@ -258,6 +281,11 @@ class Gateway:
                 # WeCom URL verification: echostr
                 if self.path.startswith("/wecom"):
                     qs = dict(x.split("=", 1) for x in self.path.split("?", 1)[-1].split("&") if "=" in x)
+                    for ad in gate.adapters:
+                        if ad.name == "wecom":
+                            resp = ad.verify_url(qs)
+                            self._json(resp)
+                            return
                     echo = qs.get("echostr", "")
                     self._json({"errcode": 0, "errmsg": "ok", "echostr": echo})
                     return
@@ -311,9 +339,10 @@ class Gateway:
                             self._json(resp)
                             return
                 if self.path.startswith("/wecom"):
+                    qs = dict(x.split("=", 1) for x in self.path.split("?", 1)[-1].split("&") if "=" in x)
                     for ad in gate.adapters:
                         if ad.name == "wecom":
-                            resp = ad.handle_webhook(body)
+                            resp = ad.handle_webhook(body, qs)
                             self._json(resp)
                             return
                 if self.path.startswith("/api/send"):

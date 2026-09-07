@@ -1,12 +1,15 @@
-"""会话持久化 / resume / 压缩：workspace/sessions/<id>.json。
+"""会话持久化 / resume / 压缩 / 跨会话检索：workspace/sessions/<id>.json。
 
 - save/load/list/remove：TUI /save /resume /sessions、网关落盘共用
 - compact：超预算时先 LLM 摘要旧轮（无 client 时纯截断兜底），system 恒保留
+- search_sessions：Hermes session_search 的 stdlib 版——纯关键词跨会话检索，
+  返回命中轮 ± 上下文（bookend 思路），零依赖零 token
 """
 
 from __future__ import annotations
 
 import json
+import re
 import time
 from pathlib import Path
 
@@ -96,3 +99,113 @@ def compact_messages(messages: list[dict], max_chars: int = 60_000, summarizer=N
         return system + [{"role": "user",
                           "content": f"[此前 {len(old)} 轮对话摘要]\n{summary[:4000]}"}] + recent
     return system + recent
+
+
+# ---------- cross-session search (Hermes session_search, stdlib-only) ----------
+
+
+def _session_index(messages: list[dict]) -> str:
+    """Lowercased searchable text for one session (user+assistant turns only)."""
+    parts = []
+    for m in messages:
+        if m.get("role") not in ("user", "assistant"):
+            continue
+        c = m.get("content")
+        if isinstance(c, str):
+            parts.append(c.lower())
+        elif isinstance(c, list):  # anthropic tool_result blocks
+            for b in c:
+                if isinstance(b, dict) and isinstance(b.get("content"), str):
+                    parts.append(b["content"].lower())
+    return "\n".join(parts)
+
+
+def search_sessions(workspace: Path, query: str, limit: int = 5) -> list[dict]:
+    """Keyword search across saved sessions (no LLM, ~ms). Returns excerpts.
+
+    Query words are space-separated and AND-matched (lowercased substring).
+    Each hit: {session, role, text, context:[{role,text}...]} — the best
+    matching turn plus one turn before/after as context (bookend framing).
+    """
+    terms = [t for t in re.split(r"\s+", (query or "").strip().lower()) if t]
+    if not terms:
+        return []
+    out: list[dict] = []
+    d = sessions_dir(workspace)
+    for p in sorted(d.glob("*.json"), key=lambda x: x.stat().st_mtime, reverse=True):
+        if len(out) >= limit:
+            break
+        try:
+            msgs = json.loads(p.read_text(encoding="utf-8")).get("messages", [])
+        except Exception:
+            continue
+        idx = _session_index(msgs)
+        if not all(t in idx for t in terms):
+            continue
+        # pick the session's best-matching turn (most term hits)
+        best = None  # (score, index)
+        for i, m in enumerate(msgs):
+            c = m.get("content")
+            if not isinstance(c, str) or m.get("role") not in ("user", "assistant"):
+                continue
+            cl = c.lower()
+            score = sum(cl.count(t) for t in terms)
+            if score and (best is None or score > best[0]):
+                best = (score, i)
+        if best is None:
+            continue
+        i = best[1]
+        c = msgs[i]["content"]
+        excerpt = c[:500] if len(c) <= 500 else c[:250] + "…" + c[-250:]
+        lo, hi = max(0, i - 1), min(len(msgs), i + 2)
+        out.append({
+            "session": p.stem,
+            "role": msgs[i]["role"],
+            "text": excerpt,
+            "context": [{"role": msgs[j].get("role", "?"), "text": (msgs[j].get("content") or "")[:300]}
+                        for j in range(lo, hi) if j != i and isinstance(msgs[j].get("content"), str)],
+        })
+    return out[:limit]
+
+
+def format_search_results(hits: list[dict]) -> str:
+    """Render search results as compact text for the agent/tool result."""
+    if not hits:
+        return "(no matches in saved sessions)"
+    lines = []
+    for h in hits:
+        head = f"[{h['session']} · {h['role']}] {h['text']}"
+        lines.append(head[:600])
+        for c in h.get("context", []):
+            lines.append(f"    · ({c['role']}) {c['text'][:200]}")
+    return "\n".join(lines)
+
+
+SESSION_SEARCH_DEF = {
+    "type": "function",
+    "function": {
+        "name": "session_search",
+        "description": "在已保存的会话记录里做关键词检索（免费、秒回）。当用户说“我们上次聊过/之前说过 X”或你记不清是否处理过某主题时使用。返回命中片段及上下文。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "关键词，如 '部署 服务器'"},
+                "limit": {"type": "integer", "description": "最多返回几条（默认 5）"},
+            },
+            "required": ["query"],
+        },
+    },
+}
+
+
+def session_search_tool(query: str, limit: int = 5) -> str:
+    """Tool body: search the active workspace's saved sessions."""
+    from .workspace import find_workspace
+    ws = find_workspace()
+    if not ws:
+        return "(no workspace)"
+    try:
+        hits = search_sessions(ws, query, limit=max(1, min(int(limit or 5), 10)))
+    except Exception as e:
+        return f"[error] {type(e).__name__}: {e}"
+    return format_search_results(hits)

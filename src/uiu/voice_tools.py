@@ -19,6 +19,22 @@ import tempfile
 import threading
 import subprocess
 
+# whisper 模型缓存：避免每次 listen 都重新加载（加载 base 约需数秒）
+_whisper_model = None
+_whisper_lock = threading.Lock()
+
+
+def _get_whisper_model():
+    """Get (and cache) the whisper model instance."""
+    global _whisper_model
+    if _whisper_model is not None:
+        return _whisper_model
+    with _whisper_lock:
+        if _whisper_model is None:
+            import whisper
+            _whisper_model = whisper.load_model("base")
+        return _whisper_model
+
 
 # ---------- TTS ----------
 
@@ -151,7 +167,6 @@ def listen(duration: int = 5, language: str = "") -> str:
 
 def _listen_whisper(duration: int, language: str) -> str:
     """Transcribe using OpenAI Whisper (local)."""
-    import whisper
     import sounddevice as sd
     import numpy as np
     from scipy.io import wavfile
@@ -166,7 +181,7 @@ def _listen_whisper(duration: int, language: str) -> str:
     wavfile.write(tmp_path, sample_rate, recording)
 
     # Transcribe
-    model = whisper.load_model("base")
+    model = _get_whisper_model()
     result = model.transcribe(tmp_path, language=language or None)
 
     # Clean up
@@ -189,7 +204,7 @@ def _listen_speech_recognition(duration: int, language: str) -> str:
         audio = recognizer.listen(source, timeout=duration + 2, phrase_time_limit=duration)
 
     # Try Google's API
-    lang = language or ("zh-CN" if True else "en-US")
+    lang = language or "zh-CN"  # 默认中文识别（Google 无语言参数时自动检测不可靠）
     try:
         text = recognizer.recognize_google(audio, language=lang)
         return text

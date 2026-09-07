@@ -557,7 +557,89 @@ DESKTOP_TOOL_SCHEMAS: list[dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "spatial_anchor_find",
+            "description": "相对空间拓扑定位：基于锚点元素查找相对方位的目标控件（支持 'right', 'left', 'below', 'above', 'inside'）。例如：点击‘智谱 GLM’右侧的‘编辑’。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "target": {"type": "string", "description": "目标元素名称/类型（如 '编辑', '输入框', '保存'）"},
+                    "anchor": {"type": "string", "description": "参考锚点元素名称（如 '智谱 GLM', '用户名'）"},
+                    "relation": {
+                        "type": "string",
+                        "enum": ["right", "left", "below", "above", "inside"],
+                        "description": "相对空间方位（默认 right）",
+                        "default": "right",
+                    },
+                    "max_distance": {
+                        "type": "number",
+                        "description": "最大允许搜索间距像素（默认 400.0）",
+                        "default": 400.0,
+                    },
+                },
+                "required": ["target", "anchor"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "scroll_probe_find",
+            "description": "虚拟滚动探针：自动沿长页面/长列表滚动查找指定目标，通过画面差分自动探测滚动边界防止死循环。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "target": {"type": "string", "description": "要搜索的目标文字或控件名"},
+                    "anchor": {"type": "string", "description": "可选相对锚点", "default": ""},
+                    "max_scrolls": {"type": "integer", "description": "最大滚动次数（默认 6）", "default": 6},
+                    "scroll_clicks": {"type": "integer", "description": "单次滚动单位（负数向下，默认 -4）", "default": -4},
+                },
+                "required": ["target"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "task_checkpoint_manage",
+            "description": "长任务检查点与 WAL 事务管理：查看未完成任务列表、断点续跑、或执行事务回滚。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["list_incomplete", "rollback"],
+                        "description": "操作动作",
+                    },
+                    "task_id": {"type": "string", "description": "目标任务 ID（回滚时必填）", "default": ""},
+                },
+                "required": ["action"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "browser_cdp_action",
+            "description": "浏览器 CDP 混合自动化：若 Chrome/Edge 开启了调试端口 9222，直接执行 DOM CSS 点击、读取 innerText 或运行 JS。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["status", "get_text", "click_selector"],
+                        "description": "CDP 动作",
+                    },
+                    "selector": {"type": "string", "description": "CSS 选择器（点击时必填）", "default": ""},
+                },
+                "required": ["action"],
+            },
+        },
+    },
 ]
+
 
 
 
@@ -827,8 +909,58 @@ def dispatch_tool(name: str, args: dict[str, Any]) -> str:
                 info = check_app_health(target)
                 return f"[ok] 应用健康检查报告: {json.dumps(info, ensure_ascii=False)}"
 
+        elif name == "spatial_anchor_find":
+            from .spatial_locator import find_element_by_relation
+            elem = find_element_by_relation(
+                target=args.get("target", ""),
+                anchor=args.get("anchor", ""),
+                relation=args.get("relation", "right"),
+                max_distance_px=float(args.get("max_distance", 400.0)),
+            )
+            if elem:
+                return f"[ok] 相对空间定位成功: 找到目标 '{elem['text']}' 位于 '{args.get('anchor')}' 的 {args.get('relation')} 方位 (间距: {elem['distance']}px, 坐标: ({elem['cx']}, {elem['cy']}))"
+            return f"[warning] 在锚点 '{args.get('anchor')}' 的 {args.get('relation')} 方位未匹配到目标 '{args.get('target')}'"
+
+        elif name == "scroll_probe_find":
+            from .scroll_probe import scroll_and_find
+            res_scroll = scroll_and_find(
+                target=args.get("target", ""),
+                anchor=args.get("anchor") or None,
+                max_scrolls=int(args.get("max_scrolls", 6)),
+                scroll_clicks=int(args.get("scroll_clicks", -4)),
+            )
+            return json.dumps(res_scroll, ensure_ascii=False)
+
+        elif name == "task_checkpoint_manage":
+            from .task_checkpoint import list_incomplete_tasks, rollback_task
+            action = args.get("action", "list_incomplete")
+            if action == "list_incomplete":
+                tasks = list_incomplete_tasks()
+                return f"[ok] 检查点任务列表 ({len(tasks)} 项): {json.dumps(tasks, ensure_ascii=False)}"
+            elif action == "rollback":
+                tid = args.get("task_id", "")
+                return rollback_task(tid)
+            else:
+                return f"[error] 未知动作: {action}"
+
+        elif name == "browser_cdp_action":
+            from .cdp_controller import is_cdp_available, get_browser_dom_text, click_dom_element, list_browser_tabs
+            action = args.get("action", "status")
+            if action == "status":
+                avail = is_cdp_available()
+                tabs = list_browser_tabs() if avail else []
+                return f"[ok] 浏览器 CDP 调试端口 9222 状态: {'开启' if avail else '未开启'} (打开标签页: {len(tabs)} 个)"
+            elif action == "get_text":
+                return get_browser_dom_text()
+            elif action == "click_selector":
+                sel = args.get("selector", "")
+                return click_dom_element(sel)
+            else:
+                return f"[error] 未知 CDP 动作: {action}"
+
         else:
             return f"[error] 未知工具: {name}"
+
 
 
 

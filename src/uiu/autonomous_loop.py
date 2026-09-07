@@ -156,9 +156,30 @@ class AutonomousTaskRunner:
         # 2. Autonomous Multi-step Loop
         planner = self.planner_fn or self._default_planner
         all_succeeded = True
+        task_id = f"task_{int(t0)}_{''.join(c if c.isalnum() else '_' for c in goal)[:12]}"
 
         for step_idx in range(self.max_steps):
             step_t0 = time.perf_counter()
+
+            # Global Emergency Stop check
+            try:
+                from .safety_hud import is_emergency_stop_triggered
+                if is_emergency_stop_triggered():
+                    traces.append(StepTrace(
+                        step_idx=step_idx + 1,
+                        thought="检测到全局急停信号",
+                        tool_name="emergency_stop",
+                        tool_args={},
+                        observation="[stopped] 全局急停热键触发，任务紧急中止释放控制权",
+                        reflection="安全急停拦截生效",
+                        is_success=False,
+                        duration_s=time.perf_counter() - step_t0,
+                    ))
+                    all_succeeded = False
+                    break
+            except Exception:
+                pass
+
             plan = planner(goal, traces, context)
 
             is_completed = plan.get("completed", False)
@@ -169,28 +190,47 @@ class AutonomousTaskRunner:
             if is_completed and not tool_name:
                 break
 
+            # Checkpoint WAL step start
+            try:
+                from .task_checkpoint import record_step_start, record_step_finish
+                record_step_start(task_id, goal, step_idx + 1, tool_name, tool_args)
+            except Exception:
+                pass
+
             # Risk Guardrail Check
             risk_lvl, risk_reason = evaluate_tool_risk(tool_name, tool_args)
             if risk_lvl == RiskLevel.BLOCKED:
+                obs_blocked = f"[blocked] 操作被安全风控阻断: {risk_reason}"
                 traces.append(StepTrace(
                     step_idx=step_idx + 1,
                     thought=thought,
                     tool_name=tool_name,
                     tool_args=tool_args,
-                    observation=f"[blocked] 操作被安全风控阻断: {risk_reason}",
+                    observation=obs_blocked,
                     reflection="触发高危操作安全拦截，终止执行以保卫系统安全",
                     is_success=False,
                     duration_s=time.perf_counter() - step_t0,
                 ))
+                try:
+                    from .task_checkpoint import record_step_finish
+                    record_step_finish(task_id, step_idx + 1, obs_blocked, status="failed")
+                except Exception:
+                    pass
                 all_succeeded = False
                 break
-
 
             # Execute Tool
             obs = dispatch_tool(tool_name, tool_args)
             step_success = not (obs.startswith("[error]") or "[blocked]" in obs)
             if not step_success:
                 all_succeeded = False
+
+            # Checkpoint WAL step finish
+            try:
+                from .task_checkpoint import record_step_finish
+                record_step_finish(task_id, step_idx + 1, obs, status="completed" if step_success else "failed")
+            except Exception:
+                pass
 
             # Reflection
             if step_success:
@@ -211,6 +251,7 @@ class AutonomousTaskRunner:
 
             if is_completed:
                 break
+
 
         total_duration = time.perf_counter() - t0
         compiled_name = None

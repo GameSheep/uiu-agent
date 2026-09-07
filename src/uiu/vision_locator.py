@@ -230,3 +230,6 @@ def scroll_and_find(
             time.sleep(0.4)
 
     return None
+
+
+find_text_element = locate_text_on_screen

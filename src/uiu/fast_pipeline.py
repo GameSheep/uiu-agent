@@ -131,7 +131,17 @@ def gui_action_pipeline(steps: list[dict[str, Any]]) -> str:
                     detail = mouse_click(int(round(ctrl["cx"])), int(round(ctrl["cy"])), duration=0.0)
                 else:
                     status = "error"
-                    detail = f"未找到 UIA 控件: {ctrl_name} ({ctype})"
+            elif action in ("smart_click", "smart_interact"):
+                from .smart_interact import smart_interact
+                tgt = step.get("target", step.get("text", step.get("name", "")))
+                sub_act = step.get("sub_action", "click")
+                v_ch = bool(step.get("verify_change", False))
+                res = smart_interact(tgt, action=sub_act, verify_change=v_ch)
+                if res.get("success"):
+                    detail = f"智能交互成功 ({res.get('tier_used')} 命中: x={res.get('x')}, y={res.get('y')})"
+                else:
+                    status = "error"
+                    detail = res.get("message", "智能交互失败")
 
             elif action in ("type", "type_text"):
                 text = step.get("text", "")

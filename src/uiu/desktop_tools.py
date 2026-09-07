@@ -236,6 +236,44 @@ DESKTOP_TOOL_SCHEMAS: list[dict[str, Any]] = [
                 },
             },
         },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "smart_interact",
+            "description": "统一多模态自愈交互原语：自动执行 UIA -> OCR -> 锚点图标 -> 模板匹配 四级降级重试，并核验点击前后屏幕视觉变化，杜绝静默失败。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "target": {
+                        "type": "string",
+                        "description": "目标标识，支持控件名、文字或图标名（如 '保存', '设置', 'pencil', 'close'）",
+                    },
+                    "action": {
+                        "type": "string",
+                        "enum": ["click", "double_click", "right_click", "hover", "find_only"],
+                        "description": "动作类型（默认 click）",
+                        "default": "click",
+                    },
+                    "region": {
+                        "type": "array",
+                        "items": {"type": "integer"},
+                        "description": "限定搜索区域 [x, y, w, h]",
+                    },
+                    "verify_change": {
+                        "type": "boolean",
+                        "description": "是否核验操作前后屏幕视觉差分（默认 true）",
+                        "default": True,
+                    },
+                    "window_title": {
+                        "type": "string",
+                        "description": "可选限定的窗口标题",
+                        "default": "",
+                    },
+                },
+                "required": ["target"],
+            },
+        },
     }
 ]
 
@@ -371,6 +409,17 @@ def dispatch_tool(name: str, args: dict[str, Any]) -> str:
             if res:
                 return json.dumps({"found": True, "x": res["cx"], "y": res["cy"], "detail": res}, ensure_ascii=False)
             return json.dumps({"found": False, "message": f"未找到 UIA 控件: {args}"}, ensure_ascii=False)
+
+        elif name == "smart_interact":
+            from .smart_interact import smart_interact
+            res = smart_interact(
+                target=args.get("target"),
+                action=args.get("action", "click"),
+                region=args.get("region"),
+                verify_change=args.get("verify_change", True),
+                window_title=args.get("window_title"),
+            )
+            return json.dumps(res, ensure_ascii=False)
 
         else:
             return f"[error] 未知工具: {name}"

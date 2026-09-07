@@ -291,6 +291,47 @@ DESKTOP_TOOL_SCHEMAS: list[dict[str, Any]] = [
                 "required": ["goal"],
             },
         },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "macro_auto_compile",
+            "description": "基于自我编程演进范式：将动作步骤序列自动编译为原生高性能 Python 宏代码并注册，实现后续 0 思考毫秒级复用。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "宏名称（如 'update_remark_macro'）"},
+                    "target_app": {"type": "string", "description": "目标软件（如 'CC Switch'）", "default": ""},
+                    "steps": {
+                        "type": "array",
+                        "items": {"type": "object"},
+                        "description": "动作列表 [{'action': 'click', ...}, ...]",
+                    },
+                    "parameters": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "动态形参列表",
+                        "default": [],
+                    },
+                },
+                "required": ["name", "steps"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "macro_fast_run",
+            "description": "从情境经验记忆库中召回或直接运行已编译的原生零延迟宏（全流程 < 1 秒，0 思考）。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "macro_name": {"type": "string", "description": "宏名称或语义查询词（如 'update_cc_switch' 或 '修改备注'）"},
+                    "kwargs": {"type": "object", "description": "宏执行所需的动态入参键值对", "default": {}},
+                },
+                "required": ["macro_name"],
+            },
+        },
     }
 ]
 
@@ -441,6 +482,31 @@ def dispatch_tool(name: str, args: dict[str, Any]) -> str:
         elif name == "hierarchical_execute":
             from .hierarchical_agent import hierarchical_execute
             return hierarchical_execute(goal=args.get("goal", ""))
+
+        elif name == "macro_auto_compile":
+            from .trajectory_compiler import ActionTrajectory, save_and_register_macro
+            traj = ActionTrajectory(
+                name=args.get("name", "macro"),
+                target_app=args.get("target_app", ""),
+                steps=args.get("steps", []),
+                parameters=args.get("parameters", []),
+            )
+            fn_name, path = save_and_register_macro(traj)
+            return f"[ok] 宏 '{fn_name}' 已成功编译并注册至 {path}"
+
+        elif name == "macro_fast_run":
+            from .trajectory_compiler import run_compiled_macro
+            from .episodic_memory import find_matching_macro
+            target = args.get("macro_name", "")
+            kwargs = args.get("kwargs", {})
+            res = run_compiled_macro(target, **kwargs)
+            if not res.startswith("[error] 未找到"):
+                return res
+            ep = find_matching_macro(target)
+            if ep and ep.get("macro_name"):
+                matched_name = ep["macro_name"]
+                return run_compiled_macro(matched_name, **kwargs)
+            return res
 
         else:
             return f"[error] 未知工具: {name}"

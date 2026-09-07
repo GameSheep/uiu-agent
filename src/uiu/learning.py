@@ -252,7 +252,20 @@ def record_verified_action(
     summary = f"[{target_app}] 已验证操作 '{action_name}': {first_step} 等 {len(steps_list)} 步流程，已沉淀至技能 {safe_name}"
     mem_res = memory_add(summary)
 
-    return f"[ok] 操作 '{action_name}' 已拆解沉淀：技能 workspace/skills/{safe_name}/SKILL.md 已写入，长期记忆已同步（{mem_res}）。"
+    # 3. Auto-compile into native zero-latency Python macro & record episodic memory
+    macro_info = ""
+    try:
+        from .trajectory_compiler import ActionTrajectory, save_and_register_macro
+        from .episodic_memory import record_episode
+        parsed_steps = [{"action": "smart_interact", "target": s} for s in steps_list]
+        traj = ActionTrajectory(name=safe_name, description=desc, target_app=target_app, steps=parsed_steps)
+        save_and_register_macro(traj)
+        record_episode(goal=desc, target_app=target_app, macro_name=safe_name)
+        macro_info = f"，原生宏 workspace/macros/{safe_name}.py 已编译就绪"
+    except Exception:
+        pass
+
+    return f"[ok] 操作 '{action_name}' 已拆解沉淀：技能 workspace/skills/{safe_name}/SKILL.md 已写入，长期记忆已同步（{mem_res}）{macro_info}。"
 
 
 def skill_improve(name: str, note: str = "") -> str:

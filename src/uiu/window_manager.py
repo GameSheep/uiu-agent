@@ -6,9 +6,11 @@ import ctypes
 import os
 import shutil
 import subprocess
+import sys
 import time
 import winreg
 from pathlib import Path
+
 
 # Enable Per-Monitor DPI Awareness so screen coords & clicks match physical pixels on Win10/Win11
 try:
@@ -21,9 +23,22 @@ except Exception:
 
 
 def ensure_default_desktop() -> bool:
-    """Attach the calling thread to the interactive 'default' desktop on Windows.
+    """Attach the calling thread to the interactive 'default' or active input desktop on Windows.
     Prevents empty window lists and failed screenshots in background service/agent threads.
     """
+    if sys.platform != "win32":
+        return False
+    try:
+        user32 = ctypes.windll.user32
+        hdesk = user32.OpenInputDesktop(0, False, 0x01FF)  # MAXIMUM_ALLOWED
+        if hdesk:
+            res = user32.SetThreadDesktop(hdesk)
+            user32.CloseDesktop(hdesk)
+            if res:
+                return True
+    except Exception:
+        pass
+
     try:
         import win32service
         import win32con
@@ -34,6 +49,7 @@ def ensure_default_desktop() -> bool:
     except Exception:
         pass
     return False
+
 
 
 def list_visible_windows() -> list[dict]:

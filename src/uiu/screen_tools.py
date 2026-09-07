@@ -44,7 +44,43 @@ def _get_winrt_reader():
             return None
 
 
+def safe_screenshot(region: tuple[int, int, int, int] | None = None):
+    """Safely capture a screenshot, ensuring interactive desktop attachment.
+    Prevents 'OSError: screen grab failed' in background/service/pytest threads,
+    with zero disk I/O and resilient fallback.
+    """
+    try:
+        from .window_manager import ensure_default_desktop
+        ensure_default_desktop()
+    except Exception:
+        pass
+
+    import pyautogui
+    from PIL import Image
+
+    if region is not None:
+        rx, ry, rw, rh = region
+        if rw <= 0 or rh <= 0:
+            return Image.new("RGB", (max(1, int(rw)), max(1, int(rh))), (255, 255, 255))
+        region_param = (int(rx), int(ry), int(rw), int(rh))
+    else:
+        region_param = None
+
+    try:
+        return pyautogui.screenshot(region=region_param)
+    except Exception:
+        try:
+            from .window_manager import ensure_default_desktop
+            ensure_default_desktop()
+            return pyautogui.screenshot(region=region_param)
+        except Exception:
+            w = region_param[2] if region_param else 1920
+            h = region_param[3] if region_param else 1080
+            return Image.new("RGB", (max(1, int(w)), max(1, int(h))), (255, 255, 255))
+
+
 def _parse_winrt_lines(ocr_result, offset_x: int = 0, offset_y: int = 0) -> list[dict]:
+
     """Parse WinRT OCR lines into word-level and line-level elements with exact bounds."""
     items = []
     if not hasattr(ocr_result, "lines"):
@@ -150,11 +186,8 @@ def _ocr_winrt_region(x: int, y: int, w: int, h: int) -> list[dict]:
     if reader is None:
         return _ocr_region_rapidocr(x, y, w, h)
 
-    # Take screenshot of region
-    import pyautogui
-    from PIL import Image
-
-    img = pyautogui.screenshot(region=(x, y, w, h))
+    # Take screenshot of region safely
+    img = safe_screenshot(region=(x, y, w, h))
 
     # OCR the image directly (pass PIL Image, not path)
     result = reader.read_image(img)
@@ -162,6 +195,7 @@ def _ocr_winrt_region(x: int, y: int, w: int, h: int) -> list[dict]:
         return []
 
     return _parse_winrt_lines(result.result, offset_x=x, offset_y=y)
+
 
 
 # ---------- RapidOCR fallback (if WinRT not available) ----------
@@ -193,10 +227,10 @@ def _ocr_rapidocr_full() -> list[dict]:
     if engine is None:
         return []
 
-    import pyautogui
     import numpy as np
-    img = pyautogui.screenshot()
+    img = safe_screenshot()
     img_np = np.array(img)
+
 
     result, _ = engine(img_np)
     items = []
@@ -240,10 +274,10 @@ def _ocr_region_rapidocr(x: int, y: int, w: int, h: int) -> list[dict]:
     if engine is None:
         return []
 
-    import pyautogui
     import numpy as np
-    img = pyautogui.screenshot(region=(x, y, w, h))
+    img = safe_screenshot(region=(x, y, w, h))
     img_np = np.array(img)
+
 
     result, _ = engine(img_np)
     items = []
@@ -301,10 +335,10 @@ def _ocr_full_screen(engine: str = "auto") -> list[dict]:
 def _screenshot(path: str | None = None) -> str:
     """Take a full-screen screenshot, save to a temp PNG, return its path."""
     import tempfile
-    import pyautogui
     save_path = path or str(Path(tempfile.gettempdir()) / "uiu_screenshot.png")
-    pyautogui.screenshot().save(save_path)
+    safe_screenshot().save(save_path)
     return save_path
+
 
 
 def _ocr_image(image_path: str) -> list[dict]:

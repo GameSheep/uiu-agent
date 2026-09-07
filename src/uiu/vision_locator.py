@@ -7,8 +7,9 @@ from typing import Any
 
 
 def capture_screen(region: tuple[int, int, int, int] | None = None):
-    import pyautogui
-    return pyautogui.screenshot(region=region)
+    from .screen_tools import safe_screenshot
+    return safe_screenshot(region=region)
+
 
 
 def get_screen_elements(

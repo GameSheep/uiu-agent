@@ -143,6 +143,26 @@ def gui_action_pipeline(steps: list[dict[str, Any]]) -> str:
                     status = "error"
                     detail = res.get("message", "智能交互失败")
 
+            elif action in ("wait_stable", "wait_screen_stable"):
+                from .auto_recovery import wait_screen_stable
+                reg = step.get("region")
+                reg_tuple = tuple(reg) if reg and len(reg) == 4 else None
+                max_w = float(step.get("max_wait_ms", 2000.0))
+                ok = wait_screen_stable(region=reg_tuple, max_wait_ms=max_w)
+                detail = f"画面沉降等待: {'已静止' if ok else '超时'}"
+
+            elif action in ("resilient_click", "auto_click"):
+                from .auto_recovery import resilient_click
+                tgt = step.get("target", step.get("text", step.get("name", "")))
+                reg = step.get("region")
+                reg_tuple = tuple(reg) if reg and len(reg) == 4 else None
+                res = resilient_click(tgt, region=reg_tuple)
+                if res.get("success"):
+                    detail = f"高鲁棒自愈点击成功 ({res.get('tier_used')}: {res.get('x')}, {res.get('y')})"
+                else:
+                    status = "error"
+                    detail = res.get("message", "自愈点击失败")
+
             elif action in ("type", "type_text"):
                 text = step.get("text", "")
                 clear = bool(step.get("clear_before", False))

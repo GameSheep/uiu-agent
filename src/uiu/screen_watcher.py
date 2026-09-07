@@ -57,8 +57,10 @@ def screen_watch_and_react(
 
         # 1. Image change condition
         if condition == "changed":
-            img = pyautogui.screenshot(region=r_tuple)
+            from .screen_tools import safe_screenshot
+            img = safe_screenshot(region=r_tuple)
             # Simple fast downsampled visual hash
+
             small = img.resize((32, 32)).convert("L")
             curr_hash = sum(small.getdata())
             if last_img_hash is not None:

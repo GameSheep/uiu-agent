@@ -17,11 +17,12 @@ import numpy as np
 def _to_gray_array(img_or_region: Any) -> np.ndarray:
     """Convert input image (PIL Image, numpy array, or screen region) into a grayscale ndarray."""
     if img_or_region is None or (isinstance(img_or_region, (tuple, list)) and len(img_or_region) == 4):
-        import pyautogui
+        from .screen_tools import safe_screenshot
         reg = tuple(img_or_region) if img_or_region else None
-        pil_img = pyautogui.screenshot(region=reg)
+        pil_img = safe_screenshot(region=reg)
         arr = np.array(pil_img)
         return cv2.cvtColor(arr, cv2.COLOR_RGB2GRAY)
+
 
     if isinstance(img_or_region, np.ndarray):
         if len(img_or_region.shape) == 3:
@@ -128,18 +129,17 @@ def verify_action_effect(
 
     Returns (action_result, diff_info).
     """
-    import pyautogui
-    from .window_manager import ensure_default_desktop
+    from .screen_tools import safe_screenshot
 
-    ensure_default_desktop()
-    before_shot = pyautogui.screenshot(region=region)
+    before_shot = safe_screenshot(region=region)
 
     result = action_fn()
 
     if settle_ms > 0:
         time.sleep(settle_ms / 1000.0)
 
-    after_shot = pyautogui.screenshot(region=region)
+    after_shot = safe_screenshot(region=region)
+
     offset = (region[0], region[1]) if region else (0, 0)
     diff = compute_screen_diff(before_shot, after_shot, region_offset=offset, pixel_threshold=pixel_threshold)
 

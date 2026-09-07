@@ -332,6 +332,60 @@ DESKTOP_TOOL_SCHEMAS: list[dict[str, Any]] = [
                 "required": ["macro_name"],
             },
         },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "resilient_click",
+            "description": "极高鲁棒性自愈点击：自动等待界面动画渲染沉降、自动检测并消解意外遮挡弹窗，并在未生效时触发自愈重试。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "target": {
+                        "type": "string",
+                        "description": "目标元素标识（控件名、文本或图标名称）",
+                    },
+                    "region": {
+                        "type": "array",
+                        "items": {"type": "integer"},
+                        "description": "限定搜索区域 [x, y, w, h]",
+                    },
+                    "wait_stable": {
+                        "type": "boolean",
+                        "description": "是否等待界面渲染稳定（默认 true）",
+                        "default": True,
+                    },
+                    "auto_dismiss_popups": {
+                        "type": "boolean",
+                        "description": "是否自动消解阻断性弹窗（默认 true）",
+                        "default": True,
+                    },
+                },
+                "required": ["target"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "wait_screen_stable",
+            "description": "等待屏幕或指定区域画面变动沉降静止（用于等待加载完成或过渡动画结束）。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "region": {
+                        "type": "array",
+                        "items": {"type": "integer"},
+                        "description": "限定区域 [x, y, w, h]",
+                    },
+                    "max_wait_ms": {
+                        "type": "number",
+                        "description": "最大等待时间毫秒（默认 2000ms）",
+                        "default": 2000.0,
+                    },
+                },
+            },
+        },
     }
 ]
 
@@ -507,6 +561,24 @@ def dispatch_tool(name: str, args: dict[str, Any]) -> str:
                 matched_name = ep["macro_name"]
                 return run_compiled_macro(matched_name, **kwargs)
             return res
+
+        elif name == "resilient_click":
+            from .auto_recovery import resilient_click
+            res = resilient_click(
+                target=args.get("target"),
+                region=args.get("region"),
+                wait_stable=args.get("wait_stable", True),
+                auto_dismiss_popups=args.get("auto_dismiss_popups", True),
+            )
+            return json.dumps(res, ensure_ascii=False)
+
+        elif name == "wait_screen_stable":
+            from .auto_recovery import wait_screen_stable
+            ok = wait_screen_stable(
+                region=args.get("region"),
+                max_wait_ms=float(args.get("max_wait_ms", 2000.0)),
+            )
+            return json.dumps({"stable": ok, "message": "画面已静止" if ok else "等待超时，画面仍有动态变动"}, ensure_ascii=False)
 
         else:
             return f"[error] 未知工具: {name}"

@@ -19,13 +19,14 @@ def _to_cv2_bgr(image_or_region: Any) -> tuple[np.ndarray, tuple[int, int]]:
     """Convert PIL image, numpy array, or screen region tuple to (cv2_bgr_img, (offset_x, offset_y))."""
     offset_x, offset_y = 0, 0
     if image_or_region is None or (isinstance(image_or_region, (tuple, list)) and len(image_or_region) == 4):
-        import pyautogui
+        from .screen_tools import safe_screenshot
         reg = tuple(image_or_region) if image_or_region else None
         if reg:
             offset_x, offset_y = int(reg[0]), int(reg[1])
-        pil_img = pyautogui.screenshot(region=reg)
+        pil_img = safe_screenshot(region=reg)
         img = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
         return img, (offset_x, offset_y)
+
 
     if isinstance(image_or_region, np.ndarray):
         if len(image_or_region.shape) == 2:

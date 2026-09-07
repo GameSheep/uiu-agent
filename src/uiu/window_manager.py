@@ -78,8 +78,16 @@ def list_visible_windows() -> list[dict]:
             "is_minimized": bool(win32gui.IsIconic(hwnd)),
         })
 
-    win32gui.EnumWindows(_enum_callback, None)
+    try:
+        win32gui.EnumWindows(_enum_callback, None)
+    except Exception:
+        try:
+            time.sleep(0.05)
+            win32gui.EnumWindows(_enum_callback, None)
+        except Exception:
+            pass
     return windows
+
 
 
 def find_window(title_keyword: str) -> dict | None:

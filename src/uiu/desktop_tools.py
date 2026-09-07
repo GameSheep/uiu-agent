@@ -494,7 +494,71 @@ DESKTOP_TOOL_SCHEMAS: list[dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "visual_tag_screen",
+            "description": "生成 Set-of-Mark 视口交互标记：为当前屏幕或区域内所有可交互控件与文本打上高对比度编号标签（[1], [2], [3]...），杜绝视觉模型坐标幻觉。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "region": {
+                        "type": "array",
+                        "items": {"type": "integer"},
+                        "description": "限定视口区域 [x, y, w, h]",
+                    },
+                    "window_title": {"type": "string", "description": "限定窗口标题", "default": ""},
+                    "max_elements": {"type": "integer", "description": "最大标记元素数（默认 40）", "default": 40},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "som_click_tag",
+            "description": "通过 Set-of-Mark 编号标签直接交互：指定编号（如 1 或 '1'）直接执行自愈点击，杜绝误触与坐标偏移。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "tag": {"type": "string", "description": "目标元素编号（如 '1', '5'）"},
+                    "action": {
+                        "type": "string",
+                        "enum": ["click", "double_click", "right_click", "hover"],
+                        "description": "动作类型（默认 click）",
+                        "default": "click",
+                    },
+                    "verify_change": {
+                        "type": "boolean",
+                        "description": "是否核验点击视觉变动（默认 true）",
+                        "default": True,
+                    },
+                },
+                "required": ["tag"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "process_health_check",
+            "description": "检测指定应用窗口是否处于未响应/假死状态（IsHungAppWindow），并返回 CPU、内存与健康诊断报告。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "target": {"type": "string", "description": "目标软件窗口标题或进程名"},
+                    "auto_revive": {
+                        "type": "boolean",
+                        "description": "若处于假死未响应状态，是否自动尝试唤醒或安全重启（默认 false）",
+                        "default": False,
+                    },
+                },
+                "required": ["target"],
+            },
+        },
+    },
 ]
+
 
 
 
@@ -737,8 +801,35 @@ def dispatch_tool(name: str, args: dict[str, Any]) -> str:
             else:
                 return snap_window(app1, position=pos)
 
+        elif name == "visual_tag_screen":
+            from .som_tagger import capture_and_tag_screen
+            return capture_and_tag_screen(
+                region=args.get("region"),
+                window_title=args.get("window_title"),
+                max_elements=int(args.get("max_elements", 40)),
+            )
+
+        elif name == "som_click_tag":
+            from .som_tagger import click_som_tag
+            return click_som_tag(
+                tag_id=args.get("tag", ""),
+                action=args.get("action", "click"),
+                verify_change=args.get("verify_change", True),
+            )
+
+        elif name == "process_health_check":
+            from .process_watchdog import check_app_health, revive_or_restart_app
+            target = args.get("target", "")
+            auto_revive = args.get("auto_revive", False)
+            if auto_revive:
+                return revive_or_restart_app(target)
+            else:
+                info = check_app_health(target)
+                return f"[ok] 应用健康检查报告: {json.dumps(info, ensure_ascii=False)}"
+
         else:
             return f"[error] 未知工具: {name}"
+
 
 
 

@@ -144,3 +144,7 @@ def verify_action_effect(
     diff = compute_screen_diff(before_shot, after_shot, region_offset=offset, pixel_threshold=pixel_threshold)
 
     return result, diff
+
+
+verify_action_visual_effect = verify_action_effect
+

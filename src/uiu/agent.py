@@ -23,16 +23,20 @@ from .config import ModelConfig
 # ---------- non-streaming call (used to drive tool-use loop) ----------
 
 def _trim_messages(messages: list[dict], max_chars: int = 120_000) -> list[dict]:
-    """Keep conversation within budget: drop oldest non-system turns.
-
-    Rough heuristic (~4 chars/token for mixed CJK+ASCII) keeps us well under
-    typical context limits so long sessions don't hard-fail with 400 errors.
+    """Keep conversation within budget: uses intelligent rolling state compaction,
+    preserving root intent, structured action checkpoints, and recent detailed turns.
     """
-    # fast path: small enough
+    try:
+        from .context_compressor import compact_conversation_history
+        return compact_conversation_history(messages, max_chars=max_chars)
+    except Exception:
+        pass
+
+    # Fast path: small enough
     total = sum(len(m.get("content", "")) if isinstance(m.get("content"), str) else 400 for m in messages)
     if total <= max_chars:
         return messages
-    # keep system + newest; drop oldest pairs until under budget
+    # Keep system + newest; drop oldest pairs until under budget
     kept: list[dict] = []
     used = 0
     for m in reversed(messages):
@@ -46,6 +50,7 @@ def _trim_messages(messages: list[dict], max_chars: int = 120_000) -> list[dict]
         kept.insert(0, m)
         used += cost
     return kept
+
 
 
 def _call_once(

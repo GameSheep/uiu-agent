@@ -442,7 +442,60 @@ DESKTOP_TOOL_SCHEMAS: list[dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "clipboard_data_pipeline",
+            "description": "跨软件多模态剪贴板管道：支持纯文本、富图像(CF_DIB)、结构化表格(TSV/Markdown/CSV)的高速剪贴板读写与解析。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "mode": {
+                        "type": "string",
+                        "enum": ["set_text", "get_text", "set_table", "parse_table"],
+                        "description": "剪贴板操作模式",
+                    },
+                    "text": {"type": "string", "description": "要写入的纯文本内容", "default": ""},
+                    "table_data": {
+                        "type": "array",
+                        "items": {"type": "object"},
+                        "description": "要转换复制的表格数据列表 [{'col1': 'v1'}, ...]",
+                        "default": [],
+                    },
+                    "format": {
+                        "type": "string",
+                        "enum": ["tsv", "markdown", "csv"],
+                        "description": "表格序列化格式（默认 tsv）",
+                        "default": "tsv",
+                    },
+                },
+                "required": ["mode"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "window_layout_tile",
+            "description": "智能视口与双屏吸附：将单/双应用窗口自动分屏并排吸附对齐（left/right/top/bottom/center），确保视觉 Agent 能同时观测并协同两个软件。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "app1": {"type": "string", "description": "第一个目标软件名称或窗口关键字"},
+                    "app2": {"type": "string", "description": "第二个目标软件名称（用于双屏并排分屏）", "default": ""},
+                    "position": {
+                        "type": "string",
+                        "enum": ["left", "right", "top", "bottom", "center", "maximize", "tile_horizontal", "tile_vertical"],
+                        "description": "布局方位或分屏方向",
+                        "default": "left",
+                    },
+                },
+                "required": ["app1"],
+            },
+        },
+    },
 ]
+
 
 
 
@@ -656,8 +709,37 @@ def dispatch_tool(name: str, args: dict[str, Any]) -> str:
             from .autonomous_loop import run_autonomous_goal
             return run_autonomous_goal(goal=args.get("goal", ""), max_steps=int(args.get("max_steps", 8)))
 
+        elif name == "clipboard_data_pipeline":
+            from .data_pipeline import clipboard_get_text, clipboard_set_text, clipboard_set_table, clipboard_parse_table
+            mode = args.get("mode", "get_text")
+            if mode == "set_text":
+                return clipboard_set_text(args.get("text", ""))
+            elif mode == "get_text":
+                txt = clipboard_get_text()
+                return f"[ok] 剪贴板文本内容 ({len(txt)} 字符): {txt[:300]}"
+            elif mode == "set_table":
+                return clipboard_set_table(args.get("table_data", []), format_type=args.get("format", "tsv"))
+            elif mode == "parse_table":
+                records = clipboard_parse_table(args.get("text"))
+                return f"[ok] 解析剪贴板表格结构成功 ({len(records)} 行): {json.dumps(records, ensure_ascii=False)}"
+            else:
+                return f"[error] 未知模式: {mode}"
+
+        elif name == "window_layout_tile":
+            from .layout_manager import snap_window, tile_windows
+            app1 = args.get("app1", "")
+            app2 = args.get("app2", "")
+            pos = args.get("position", "left")
+            if app2 or pos in ("tile_horizontal", "tile_vertical"):
+                direction = "vertical" if pos == "tile_vertical" else "horizontal"
+                res_tile = tile_windows(app1, app2, direction=direction)
+                return json.dumps(res_tile, ensure_ascii=False)
+            else:
+                return snap_window(app1, position=pos)
+
         else:
             return f"[error] 未知工具: {name}"
+
 
 
 

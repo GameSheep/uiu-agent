@@ -78,8 +78,9 @@ def evaluate_tool_risk(name: str, args: Any) -> tuple[RiskLevel, str]:
     args_dict = _extract_args_dict(args)
 
     # 1. Inspect shell_exec
-    if name in ("shell_exec", "terminal_exec", "run_command"):
+    if name in ("shell_exec", "terminal_exec", "run_command", "run_cmd"):
         cmd = str(args_dict.get("command", args_dict.get("_raw", ""))).strip()
+
         for pat in BLOCKED_SHELL_PATTERNS:
             if pat.search(cmd):
                 return RiskLevel.BLOCKED, f"检测到系统级高危破坏性指令: '{cmd[:60]}'"

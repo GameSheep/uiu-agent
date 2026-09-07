@@ -427,7 +427,23 @@ DESKTOP_TOOL_SCHEMAS: list[dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "autonomous_goal_run",
+            "description": "自主多轮任务执行器（类 Claude Code / Hermes 架构）：包含思考(Thought)、行动(Action)、观察(Observation)、反思(Reflection)四元自适应循环，并在完成后自动编译为宏记忆沉淀。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "goal": {"type": "string", "description": "要完成的自主目标指令"},
+                    "max_steps": {"type": "integer", "description": "最大多轮迭代步数（默认 8）", "default": 8},
+                },
+                "required": ["goal"],
+            },
+        },
+    },
 ]
+
 
 
 # 将微信专用工具与通用工具整合
@@ -636,8 +652,13 @@ def dispatch_tool(name: str, args: dict[str, Any]) -> str:
                 tx, ty = physical_to_logical(tx, ty)
             return f"[ok] 抗漂移安全坐标计算完成: target=({tx}, {ty}), strategy={strategy}"
 
+        elif name == "autonomous_goal_run":
+            from .autonomous_loop import run_autonomous_goal
+            return run_autonomous_goal(goal=args.get("goal", ""), max_steps=int(args.get("max_steps", 8)))
+
         else:
             return f"[error] 未知工具: {name}"
+
 
 
     except Exception as e:

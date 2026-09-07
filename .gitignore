@@ -18,8 +18,11 @@ workspace/.env
 
 workspace/sessions/
 workspace/cron/
+workspace/macros/
+workspace/episodic_memory.json
 # logs & temp
 workspace/logs/
+
 *.log
 smoke_test.py
 result.txt

@@ -10,7 +10,7 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
-from textual.widgets import Button, Label, Markdown, Static
+from textual.widgets import Button, Input, Label, ListItem, ListView, Markdown, Static
 
 from .. import __version__ as _VERSION
 from .. import tools as _tools
@@ -63,12 +63,12 @@ class HelpModal(ModalScreen[None]):
     }
     """
 
-    def _on_key(self, event: Any) -> None:
-        if event.key == "escape":
-            self.dismiss(None)
-            event.stop()
-        else:
-            super()._on_key(event)
+    BINDINGS = [
+        Binding("escape", "close", "Close"),
+    ]
+
+    def action_close(self) -> None:
+        self.dismiss(None)
 
     async def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "help-close":
@@ -111,17 +111,21 @@ class ConfirmModal(ModalScreen[bool]):
     def _answer(self, text: str) -> None:
         self.dismiss(text)
 
-    def _on_key(self, event: Any) -> None:
-        if event.key == "escape":
-            self.dismiss("")
-            event.stop()
-        elif self.options and event.key.isdigit():
+    BINDINGS = [
+        Binding("escape", "close", "Close"),
+    ]
+
+    def action_close(self) -> None:
+        self.dismiss("")
+
+    async def _on_key(self, event: Any) -> None:
+        if self.options and event.key.isdigit():
             n = int(event.key)
             if 1 <= n <= len(self.options):
                 self._answer(self.options[n - 1])
             event.stop()
-        else:
-            super()._on_key(event)
+            return
+        await super()._on_key(event)
 
     async def on_button_pressed(self, event: Button.Pressed) -> None:
         bid = event.button.id or ""
@@ -186,10 +190,18 @@ class CommandPalette(ModalScreen[str]):
     """
 
     async def on_mount(self) -> None:
-        await self._render(self.words)
+        await self._populate(self.words)
         self.query_one("#palette-input", Input).focus()
 
-    async def _render(self, words: list[str]) -> None:
+    async def on_input_submitted(self, event: Any) -> None:
+        """Enter in the filter box runs the highlighted/top command."""
+        lv = self.query_one("#palette-list", ListView)
+        if lv.index is not None and lv.index < len(self._matches):
+            self.dismiss(self._matches[lv.index])
+        elif self._matches:
+            self.dismiss(self._matches[0])
+
+    async def _populate(self, words: list[str]) -> None:
         from textual.widgets import ListItem
         self._matches = words
         lv = self.query_one("#palette-list", ListView)
@@ -200,24 +212,19 @@ class CommandPalette(ModalScreen[str]):
     async def on_input_changed(self, event: Any) -> None:
         q = (self.query_one("#palette-input", Input).value or "").strip().lower()
         matches = [w for w in self.words if q in w.lower()] if q else self.words
-        await self._render(matches)
+        await self._populate(matches)
 
     async def on_list_view_selected(self, event: Any) -> None:
         lv = self.query_one("#palette-list", ListView)
         if lv.index is not None and lv.index < len(self._matches):
             self.dismiss(self._matches[lv.index])
 
-    def _on_key(self, event: Any) -> None:
-        if event.key == "escape":
-            self.dismiss("")
-            event.stop()
-        elif event.key == "enter":
-            lv = self.query_one("#palette-list", ListView)
-            if lv.index is not None and lv.index < len(self._matches):
-                self.dismiss(self._matches[lv.index])
-            event.stop()
-        else:
-            super()._on_key(event)
+    BINDINGS = [
+        Binding("escape", "close", "Close"),
+    ]
+
+    def action_close(self) -> None:
+        self.dismiss("")
 
 
 # --------------------------------------------------------------------------
@@ -238,14 +245,14 @@ class UiuApp(App[None]):
     """
 
     BINDINGS = [
-        Binding("ctrl+n", "new_chat", "新会话", show=False),
-        Binding("ctrl+s", "toggle_sidebar", "侧栏", show=False),
-        Binding("ctrl+r", "history_search", "历史搜索", show=False),
-        Binding("ctrl+l", "clear_screen", "清屏", show=False),
-        Binding("ctrl+e", "command_palette", "命令面板", show=False),
-        Binding("ctrl+q", "quit_app", "退出", show=False),
-        Binding("f2", "toggle_statusbar", "状态条", show=False),
-        Binding("question_mark", "open_help", "帮助", show=False),
+        Binding("ctrl+n", "new_chat", "新会话", show=False, priority=True),
+        Binding("ctrl+s", "toggle_sidebar", "侧栏", show=False, priority=True),
+        Binding("ctrl+r", "history_search", "历史搜索", show=False, priority=True),
+        Binding("ctrl+l", "clear_screen", "清屏", show=False, priority=True),
+        Binding("ctrl+e", "command_palette", "命令面板", show=False, priority=True),
+        Binding("ctrl+q", "quit_app", "退出", show=False, priority=True),
+        Binding("f2", "toggle_statusbar", "状态条", show=False, priority=True),
+        Binding("f1", "open_help", "帮助 (F1)", show=False, priority=True),
     ]
 
     def __init__(
@@ -486,9 +493,14 @@ class UiuApp(App[None]):
         self._autosave()
 
     async def on_ask_user(self, event: AskUser) -> None:
-        """Clarify bridge: show modal, hand answer back to the waiting thread."""
-        answer = await self.push_screen_wait(ConfirmModal(event.question, event.options))
-        self._bridge.answer(answer if answer is not None else "")
+        """Clarify bridge: show modal, hand answer back to the waiting thread.
+
+        The worker thread is blocked on the bridge Event. We push a modal whose
+        callback wakes the worker via bridge.answer when it dismisses.
+        """
+        def _on_done(res):
+            self._bridge.answer(res if res is not None else "")
+        self.push_screen(ConfirmModal(event.question, event.options), callback=_on_done)
 
     # -- sending a user turn --------------------------------------------
 
@@ -630,9 +642,11 @@ class UiuApp(App[None]):
         words = self._slash_words()
         if not words:
             return
-        result = await self.push_screen_wait(CommandPalette(words))
-        if result:
-            await self._send(result)
+        # push_screen_wait must run inside a worker; use the callback form instead
+        async def _on_picked(result):
+            if result:
+                await self._send(result)
+        self.push_screen(CommandPalette(words), callback=_on_picked)
 
     async def action_quit_app(self) -> None:
         self.exit()
@@ -653,7 +667,7 @@ class UiuApp(App[None]):
             ("ctrl+e", "命令面板"),
             ("ctrl+l", "清屏"),
             ("f2", "状态条开关"),
-            ("?", "本帮助"),
+            ("f1", "帮助浮层"),
         ]
         for key, desc in key_help:
             lines.append(f"- `{key}` — {desc}")

@@ -192,7 +192,7 @@ uiu show                                        # 看当前配置
 uiu                                             # 进全屏 TUI 开聊（--no-tui 用经典 REPL）
 ```
 
-**TUI 常用键**：`Enter` 发送 · `Shift+Enter` 换行 · `Ctrl+N` 新会话 · `Ctrl+E` 命令面板 · `?` 帮助
+**TUI 常用键**：`Enter` 发送 · `Shift+Enter` 换行 · `Ctrl+N` 新会话 · `Ctrl+E` 命令面板 · `F1` 帮助
 
 ## 完整 CLI 参考
 
@@ -405,7 +405,7 @@ uiu version
 
 - **消息区**：气泡式对话，回复以 markdown **流式渲染**（代码/列表/表格实时高亮）；工具调用折叠为单行 `✓/✗ 工具名 → 摘要`。
 - **多行输入**：`Enter` 发送、`Shift+Enter` 换行；输入 `/` 弹出命令补全。
-- **快捷键**：`Ctrl+N` 新会话 · `Ctrl+E` 命令面板（模糊搜所有 slash 命令）· `Ctrl+S` 侧栏 · `Ctrl+R` 历史搜索 · `Ctrl+L` 清屏 · `?` 帮助 · `Esc` 中断回复。
+- **快捷键**：`Ctrl+N` 新会话 · `Ctrl+E` 命令面板（模糊搜所有 slash 命令）· `Ctrl+S` 侧栏 · `Ctrl+R` 历史搜索 · `Ctrl+L` 清屏 · `F1` 帮助 · `Esc` 中断回复。
 - **不卡顿**：agent 回合在后台线程跑，等待回复时仍可滚动/打字/开命令面板。
 - **敏感操作内联确认**：`send_wechat` / `shutdown` / `macro_play` 触发时弹确认框，绝不静默执行。
 - 非交互终端（管道/CI）自动回退经典 REPL；显式需要旧界面用 `uiu --no-tui`。

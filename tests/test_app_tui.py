@@ -207,3 +207,49 @@ async def _impl_slash_completion_menu(tmp_path):
         text = composer._input.text
         assert text.startswith("/"), text
         assert not menu.has_class("-visible")
+
+
+
+def test_command_palette_runs_slash(tmp_path):
+    """ctrl+e opens the palette; Enter executes the filtered slash command."""
+    return _run(_impl_command_palette(tmp_path))
+
+
+async def _impl_command_palette(tmp_path):
+    ws = make_ws(tmp_path)
+    app = UiuApp(_Stub(), ws, model="m", cfg=None, app_cfg=None)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause(0.2)
+        await pilot.press("ctrl+e")
+        await pilot.pause(0.4)
+        assert len(app.screen_stack) == 2, "palette should be pushed"
+        pal = app.screen_stack[-1]
+        inp = pal.query_one("#palette-input")
+        await pilot.press(*list("/status"))
+        await pilot.pause(0.4)
+        from textual.widgets import ListItem
+        assert len(pal.query(ListItem)) >= 1
+        await pilot.press("enter")
+        await pilot.pause(0.8)
+        assert len(app.screen_stack) == 1, "palette should dismiss after Enter"
+        # /status emits a notice bubble
+        chat = app.query_one("#chat", ChatView)
+        notes = [b.get_text() for b in chat.query(Bubble) if b.role == "notice"]
+        assert any("tools" in t for t in notes), notes
+
+
+def test_help_modal_f1(tmp_path):
+    return _run(_impl_help_modal(tmp_path))
+
+
+async def _impl_help_modal(tmp_path):
+    ws = make_ws(tmp_path)
+    app = UiuApp(_Stub(), ws, model="m", cfg=None, app_cfg=None)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause(0.2)
+        await pilot.press("f1")
+        await pilot.pause(0.4)
+        assert len(app.screen_stack) == 2
+        await pilot.press("escape")
+        await pilot.pause(0.4)
+        assert len(app.screen_stack) == 1

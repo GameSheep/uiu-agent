@@ -67,6 +67,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--workspace", "-w", help="Path to workspace dir (default: ./workspace)")
     p.add_argument("-V", "--version", action="store_true", help="print version and exit")
+    p.add_argument("--no-tui", action="store_true", help="use the classic REPL instead of the full-screen app")
     sub = p.add_subparsers(dest="cmd", metavar="<command>")
 
     sub.add_parser("init", help="bootstrap workspace + .env")
@@ -215,6 +216,27 @@ def _build_parser() -> argparse.ArgumentParser:
     return p
 
 
+def _has_textual() -> bool:
+    """True when textual is importable (the full-screen TUI dependency)."""
+    try:
+        import textual  # noqa: F401
+        return True
+    except Exception:
+        return False
+
+
+def _tui_available() -> bool:
+    """Full-screen TUI only works on an interactive terminal."""
+    if not _has_textual():
+        return False
+    try:
+        if not sys.stdin.isatty() or not sys.stdout.isatty():
+            return False
+    except Exception:
+        return False
+    return True
+
+
 def _run_tui(args, parser: argparse.ArgumentParser) -> int:
     from .config import AppConfig, ModelConfig, load_config
     from .llm import make_client
@@ -284,6 +306,18 @@ def _run_tui(args, parser: argparse.ArgumentParser) -> int:
             print(line, flush=True)
     except Exception:
         pass
+
+    # v1.0: default to the full-screen textual app; fall back to the classic
+    # REPL when the user passes --no-tui or textual cannot start (e.g. pipe).
+    use_classic = bool(getattr(args, "no_tui", False)) or not _tui_available()
+    if not use_classic:
+        try:
+            from .app import run_app
+            return run_app(client, ws, model=cfg.model.default, cfg=cfg.model, app_cfg=cfg)
+        except Exception as _tui_err:
+            print(f"[warn] full-screen TUI unavailable ({_tui_err}); falling back to REPL", file=sys.stderr)
+            if _has_textual():
+                return 1
     return repl(client, ws, model=cfg.model.default, cfg=cfg.model, app_cfg=cfg)
 
 

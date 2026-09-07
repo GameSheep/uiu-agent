@@ -32,11 +32,12 @@ def _workspace(args) -> Path:
     ws_arg = getattr(args, "workspace", None) or os.environ.get("UIU_WORKSPACE")
     if ws_arg:
         return Path(ws_arg).expanduser()
-    # Default resolution: cwd/workspace > ~/workspace > ~/.uiu/workspace
+    # Default resolution: existing workspace > home (~/.uiu/workspace)
+    # Home-priority fallback: no local workspace -> use the personal dir
     for cand in (Path.cwd() / "workspace", Path.home() / "workspace", Path.home() / ".uiu" / "workspace"):
         if (cand / "config.yaml").exists() or (cand / "SOUL.md").exists() or cand.is_dir():
             return cand
-    return Path.cwd() / "workspace"
+    return Path.home() / ".uiu" / "workspace"
 
 
 def _print_ok(msg: str) -> None:

@@ -347,7 +347,6 @@ class UiuApp(App[None]):
             from ..confirm import set_confirm_handler
 
             def _host_confirm(name: str, preview: str) -> str:
-                # Blocking ask runs on the worker thread; reuse the clarify bridge.
                 ans = self._bridge.ask_sync(
                     f"确认执行 {name}？\n\n参数: {preview}\n\n输入 yes 确认，no 取消",
                     ["yes", "no"],
@@ -357,14 +356,22 @@ class UiuApp(App[None]):
             set_confirm_handler(_host_confirm)
         except Exception:
             pass
+        # memory hot-reload hook
+        try:
+            from ..learning import register_memory_hook
+            register_memory_hook(self.ws.reload_memory)
+        except Exception:
+            pass
 
         self._refresh_ctx()
+        # sidebar collapsed by default (ctrl+s to open)
+        try:
+            self.query_one("#sidebar").display = False
+        except Exception:
+            pass
         if prev and len(prev) > 1:
             chat = self.query_one("#chat", ChatView)
             await chat.add_notice("已恢复上次会话（/new 开新会话）")
-
-    # -- helpers ---------------------------------------------------------
-
     def _model_display(self) -> str:
         if isinstance(self.model, str) and self.model:
             return self.model

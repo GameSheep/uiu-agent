@@ -203,6 +203,8 @@ from .web_tools import WEB_TOOLS, web_tool_defs
 from .proc_tools import PROC_TOOLS, proc_tool_defs
 from .skills_runtime import SKILL_INDEX_TOOLS
 from .clarify import CLARIFY_TOOLS
+from .sessions import SESSION_SEARCH_DEF, session_search_tool
+from .macros import MACRO_TOOLS, macro_tool_defs
 
 # 兼容层：新 desktop API（DESKTOP_TOOL_SCHEMAS + dispatch_tool）桥接到
 # 旧注册表形状。send_wechat 排除在外——它经 WECHAT_TOOLS 注册，避免重复。
@@ -242,6 +244,7 @@ BUILTIN_TOOLS: dict[str, dict] = {
     "read_file": {"def": TOOL_READ_DEF, "fn": tool_read_file},
     "write_file": {"def": TOOL_WRITE_DEF, "fn": tool_write_file},
     "read_spreadsheet": {"def": TOOL_SPREADSHEET_DEF, "fn": tool_read_spreadsheet},
+    "session_search": {"def": SESSION_SEARCH_DEF, "fn": session_search_tool},
     **LEARNING_TOOLS,
     **SCREEN_TOOLS,
     **DESKTOP_TOOLS,
@@ -257,6 +260,7 @@ BUILTIN_TOOLS: dict[str, dict] = {
     **WEB_TOOLS,
     **PROC_TOOLS,
     **SKILL_INDEX_TOOLS,
+    **MACRO_TOOLS,
     **CLARIFY_TOOLS,
 }
 
@@ -280,6 +284,8 @@ def tool_groups() -> list[tuple[str, list[str]]]:
         ("proc", PROC_TOOLS),
         ("learn", LEARNING_TOOLS),
         ("skills", SKILL_INDEX_TOOLS),
+        ("sessions", ["session_search"]),
+        ("macro", MACRO_TOOLS),
         ("ask", CLARIFY_TOOLS),
         ("screen", SCREEN_TOOLS),
         ("desktop", DESKTOP_TOOLS),
@@ -336,6 +342,12 @@ def call_tool(name: str, arguments_json: str, skills: list | None = None) -> str
         args = json.loads(arguments_json) if isinstance(arguments_json, str) else arguments_json
         if not isinstance(args, dict):
             return f"[error] tool args must be a JSON object, got {type(args).__name__}"
+        # Host confirmation gate for sensitive tools (send_wechat / shutdown / macro_play).
+        from .confirm import confirm as _confirm_tool, needs_confirm as _needs_confirm
+        if _needs_confirm(name):
+            ans = _confirm_tool(name, arguments_json)
+            if ans != "yes":
+                return f"[error] 已取消：{name} 需要用户确认后才执行"
         return fn(**args)
     except json.JSONDecodeError as e:
         return f"[error] invalid JSON args: {e}"

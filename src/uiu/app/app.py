@@ -342,10 +342,19 @@ class UiuApp(App[None]):
             set_ask_handler(self._bridge.ask_sync)
         except Exception:
             pass
-        # memory hot-reload hook
+        # sensitive-tool hard confirmation (send_wechat / shutdown / macro_play)
         try:
-            from ..learning import register_memory_hook
-            register_memory_hook(self.ws.reload_memory)
+            from ..confirm import set_confirm_handler
+
+            def _host_confirm(name: str, preview: str) -> str:
+                # Blocking ask runs on the worker thread; reuse the clarify bridge.
+                ans = self._bridge.ask_sync(
+                    f"确认执行 {name}？\n\n参数: {preview}\n\n输入 yes 确认，no 取消",
+                    ["yes", "no"],
+                )
+                return ans if ans in ("yes", "y", "ok", "1") else "no"
+
+            set_confirm_handler(_host_confirm)
         except Exception:
             pass
 

@@ -68,6 +68,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--workspace", "-w", help="Path to workspace dir (default: ./workspace)")
     p.add_argument("-V", "--version", action="store_true", help="print version and exit")
     p.add_argument("--no-tui", action="store_true", help="use the classic REPL instead of the full-screen app")
+    p.add_argument("--skip-setup", action="store_true", help="skip first-run welcome/model wizard (advanced)")
     sub = p.add_subparsers(dest="cmd", metavar="<command>")
 
     sub.add_parser("init", help="bootstrap workspace + .env")
@@ -240,24 +241,27 @@ def _tui_available() -> bool:
 def _run_tui(args, parser: argparse.ArgumentParser) -> int:
     from .config import AppConfig, ModelConfig, load_config
     from .llm import make_client
-    from .tui import repl
     from .workspace import load_workspace
 
     from .commands import _workspace as _ws, cmd_init, cmd_model
 
     ws_path = _ws(args)
 
-    # First-run UX: workspace missing -> auto init + run model wizard
-    if not (ws_path / "SOUL.md").exists():
-        print(f"[first-run] workspace 不存在，正在初始化: {ws_path}")
-        # reuse cmd_init with a namespace that has no extra attrs
-        import argparse as _argparse
-        init_ns = _argparse.Namespace(workspace=str(ws_path) if args.workspace else None)
-        cmd_init(init_ns)
+    # First-run UX: welcome banner + guided setup (auto-init + model wizard)
+    first_run = not (ws_path / "SOUL.md").exists()
+    skip = bool(getattr(args, "skip_setup", False))
+    if first_run:
+        _print_welcome(ws_path)
+        if not skip:
+            import argparse as _argparse
+            init_ns = _argparse.Namespace(workspace=str(ws_path) if args.workspace else None)
+            cmd_init(init_ns)
+        else:
+            ws_path.mkdir(parents=True, exist_ok=True)
 
     cfg = load_config(ws_path)
 
-    # First-run UX: no API key -> auto run model wizard
+    # First-run UX: no API key -> auto run model wizard (unless --skip-setup)
     needs_key = cfg.model.resolved_api_key() == ""
     if needs_key:
         try:
@@ -269,8 +273,8 @@ def _run_tui(args, parser: argparse.ArgumentParser) -> int:
         except Exception:
             pass
 
-    if needs_key:
-        print("\n[first-run] 还没有配置模型，先配一个（也可以随时用 `uiu model` 切换）")
+    if needs_key and not skip:
+        print("\n[first-run] 还没有配置模型 —— 花一分钟配好就能开聊（本地模型如 Ollama 免 key）")
         import argparse as _argparse
         model_ns = _argparse.Namespace(
             workspace=str(ws_path) if args.workspace else None,
@@ -299,6 +303,17 @@ def _run_tui(args, parser: argparse.ArgumentParser) -> int:
 
     client = make_client(cfg.model)
     ws = load_workspace(ws_path)
+
+    # 首次配置后：进聊天前做一次连通性测试（可跳过；失败给明确修法）
+    if first_run and not skip:
+        try:
+            from .commands import _test_model_connection
+            rc = _test_model_connection(ws_path, cfg)
+            if rc != 0:
+                print("[warn] 连通性测试未通过 —— 仍可进入界面，但建议先修复模型配置", file=sys.stderr)
+        except Exception:
+            pass
+
     # 启动时连接配置的 MCP 服务器（best-effort，失败不影响使用）
     try:
         from .mcp_tools import try_connect_all as _mcp_connect
@@ -316,11 +331,25 @@ def _run_tui(args, parser: argparse.ArgumentParser) -> int:
             return run_app(client, ws, model=cfg.model.default, cfg=cfg.model, app_cfg=cfg)
         except Exception as _tui_err:
             print(f"[warn] full-screen TUI unavailable ({_tui_err}); falling back to REPL", file=sys.stderr)
-            if _has_textual():
-                return 1
+    from .tui import repl
     return repl(client, ws, model=cfg.model.default, cfg=cfg.model, app_cfg=cfg)
 
 
+def _print_welcome(ws_path) -> None:
+    """One-time welcome shown before the guided setup."""
+    print("")
+    print("╭──────────────────────────────────────────────╮")
+    print("│  👋 欢迎使用 uiu — 你的个人 IP agent           │")
+    print("│                                              │")
+    print("│  第一次运行，先做两件事（约 1 分钟）：           │")
+    print("│  ① 选一个模型（DeepSeek / OpenAI / 本地 Ollama）│")
+    print("│  ② 填 API key（本地模型免 key）               │")
+    print("│                                              │")
+    print("│  之后就能进入全屏聊天界面开聊。                │")
+    print("╰──────────────────────────────────────────────╯")
+    print(f"  工作目录: {ws_path}")
+    print("  （跳过向导: 启动时加 --skip-setup）")
+    print("")
 def _dispatch(args, parser: argparse.ArgumentParser) -> int:
     from .commands import (
         cmd_channel, cmd_config, cmd_cron, cmd_doctor, cmd_init, cmd_macro, cmd_model,

@@ -41,6 +41,8 @@ dependencies = [
     "pyperclip>=1.8.0",
     # Fast OCR (Windows native, < 1s)
     "screen-ocr[winrt]>=0.5.0; sys_platform == 'win32'",
+    # Playwright browser automation (CDP connection to default browser)
+    "playwright>=1.40.0",
 ]
 
 [project.optional-dependencies]

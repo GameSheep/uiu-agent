@@ -16,3 +16,29 @@ def tmp_cwd(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("UIU_WORKSPACE", str(tmp_path / "workspace"))
     return tmp_path
+
+
+@pytest.fixture(autouse=True)
+def reset_confirm_handler():
+    """Ensure confirm and clarify handlers are cleanly reset before and after every test."""
+    try:
+        from uiu.confirm import set_confirm_handler
+        set_confirm_handler(None)
+    except Exception:
+        pass
+    try:
+        from uiu.clarify import set_ask_handler
+        set_ask_handler(None)
+    except Exception:
+        pass
+    yield
+    try:
+        from uiu.confirm import set_confirm_handler
+        set_confirm_handler(None)
+    except Exception:
+        pass
+    try:
+        from uiu.clarify import set_ask_handler
+        set_ask_handler(None)
+    except Exception:
+        pass

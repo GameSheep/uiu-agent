@@ -362,8 +362,8 @@ def call_tool(name: str, arguments_json: str, skills: list | None = None) -> str
             return f"[error] tool args must be a JSON object, got {type(args).__name__}"
         # Security Guardrail Interception & Host Confirmation
         from .risk_guardrails import intercept_tool_call
-        from .confirm import _confirm as _host_confirm
-        allowed, reason = intercept_tool_call(name, args, confirm_handler=_host_confirm)
+        from . import confirm as _confirm_mod
+        allowed, reason = intercept_tool_call(name, args, confirm_handler=_confirm_mod._confirm)
         if not allowed:
             return f"[error] {reason}"
         return fn(**args)

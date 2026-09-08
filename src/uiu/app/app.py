@@ -687,6 +687,18 @@ class UiuApp(App[None]):
         event.stop()
         await self._send(event.command)
 
+    def on_unmount(self) -> None:
+        try:
+            from ..confirm import set_confirm_handler
+            set_confirm_handler(None)
+        except Exception:
+            pass
+        try:
+            from ..clarify import set_ask_handler
+            set_ask_handler(None)
+        except Exception:
+            pass
+
 # --------------------------------------------------------------------------
 # Entry
 # --------------------------------------------------------------------------

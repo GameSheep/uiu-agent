@@ -638,6 +638,90 @@ DESKTOP_TOOL_SCHEMAS: list[dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "browser_default_attach",
+            "description": "接管用户日常 Chrome/Edge 浏览器：免登录、保留全部 Cookie 与已打开标签页，通过 CDP 9222 调试端点附着至当前活动页面。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "port": {"type": "integer", "description": "CDP 调试端口（默认 9222）", "default": 9222},
+                    "auto_restart": {"type": "boolean", "description": "若浏览器运行中但未开启 9222 端口，是否允许平滑重挂载（带 --restore-last-session）", "default": False}
+                }
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "browser_explore_step",
+            "description": "在已接管的默认浏览器中执行探索性交互步进：支持 'inspect' 获取当前页可交互元素树；或执行 'click', 'fill', 'press', 'hover', 'scroll', 'navigate' 并自动提取复合指纹与效应核验。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["inspect", "click", "fill", "press", "hover", "scroll", "navigate", "wait"],
+                        "description": "交互动作（'inspect' 仅获取当前页面元素，其他为执行操作）",
+                        "default": "inspect"
+                    },
+                    "target": {
+                        "type": "string",
+                        "description": "目标元素标识：可以是元素序号（如 '1' 或 1）、文本内容（如 '百度一下'）、CSS 选择器或 TestID",
+                        "default": ""
+                    },
+                    "value": {
+                        "type": "string",
+                        "description": "输入内容（fill/type 时为输入文字，press 时为按键如 'Enter'，navigate 时为 URL）",
+                        "default": ""
+                    }
+                }
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "browser_compile_macro",
+            "description": "将探索成功的浏览器动作序列自动编译为独立、零延迟、带视觉自愈热修补能力的 Python Playwright 宏脚本并注册。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "宏名称（如 'search_baidu_macro'）"},
+                    "description": {"type": "string", "description": "宏功能描述", "default": ""},
+                    "start_url": {"type": "string", "description": "起始目标网址", "default": ""},
+                    "steps": {
+                        "type": "array",
+                        "items": {"type": "object"},
+                        "description": "动作列表 [{'action': 'fill', 'target': 'kw', 'value': 'keyword', 'fingerprint': {...}}, ...]"
+                    },
+                    "parameters": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "动态入参形参列表（例如 ['keyword']）",
+                        "default": []
+                    }
+                },
+                "required": ["name", "steps"]
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "browser_macro_run",
+            "description": "零延迟直接运行已编译的 Playwright 浏览器宏（支持传入动态参数，如 keyword='Python'），内置前端改版视觉自愈与原地热修补。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "已编译宏的名称（如 'search_baidu_macro'）"},
+                    "kwargs": {"type": "object", "description": "传递给宏的动态参数键值对", "default": {}}
+                },
+                "required": ["name"]
+            },
+        },
+    },
 ]
 
 
@@ -957,6 +1041,55 @@ def dispatch_tool(name: str, args: dict[str, Any]) -> str:
                 return click_dom_element(sel)
             else:
                 return f"[error] 未知 CDP 动作: {action}"
+
+        elif name == "browser_default_attach":
+            from .browser_connect import attach_default_browser, ensure_browser_with_cdp
+            port = int(args.get("port", 9222))
+            auto_restart = bool(args.get("auto_restart", False))
+            status = ensure_browser_with_cdp(port=port, auto_restart=auto_restart)
+            if not status.get("ready"):
+                return f"[warning] 浏览器挂接未就绪: {status.get('message')}"
+            session = attach_default_browser(port=port)
+            page = session.get_active_page()
+            tabs = session.list_tabs()
+            return f"[ok] 已成功接管日常浏览器（CDP 端口 {port}）。活动标签页: '{page.title()}' ({page.url})，共打开 {len(tabs)} 个标签页。"
+
+        elif name == "browser_explore_step":
+            from .browser_connect import attach_default_browser, get_active_browser_session
+            from .browser_explorer import capture_page_state, execute_step, format_page_state_for_agent
+            session = get_active_browser_session() or attach_default_browser()
+            page = session.get_active_page()
+            act = args.get("action", "inspect").lower()
+            if act == "inspect":
+                state = capture_page_state(page)
+                return format_page_state_for_agent(state)
+            else:
+                step_res = execute_step(
+                    page=page,
+                    action=act,
+                    target=args.get("target", ""),
+                    value=args.get("value", ""),
+                )
+                return json.dumps(step_res, ensure_ascii=False)
+
+        elif name == "browser_compile_macro":
+            from .browser_explorer import BrowserTrajectory
+            from .browser_compiler import save_and_register_browser_macro
+            traj = BrowserTrajectory(
+                name=args.get("name", "web_macro"),
+                description=args.get("description", ""),
+                start_url=args.get("start_url", ""),
+                steps=args.get("steps", []),
+                parameters=args.get("parameters", []),
+            )
+            fn_name, macro_path = save_and_register_browser_macro(traj)
+            return f"[ok] 浏览器自愈宏 '{fn_name}' 已成功编译并注册至 {macro_path}"
+
+        elif name == "browser_macro_run":
+            from .browser_compiler import run_browser_macro
+            m_name = args.get("name", "")
+            kwargs = args.get("kwargs", {})
+            return run_browser_macro(m_name, **kwargs)
 
         else:
             return f"[error] 未知工具: {name}"

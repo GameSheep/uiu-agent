@@ -77,8 +77,12 @@ def ensure_english_ime(quiet: bool = True) -> dict:
     Strategy:
     1. Check current state.
     2. If Chinese layout + IME open (pinyin mode) → press Shift to toggle to English.
-    3. Re-check; if still Chinese, try switching layout to English (Alt+Shift or Win+Space).
     """
+    from .desktop_guard import check_desktop_action_allowed
+    allowed, reason = check_desktop_action_allowed("ensure_english_ime")
+    if not allowed:
+        return current_ime_state()
+
     import pyautogui
 
     state = current_ime_state()

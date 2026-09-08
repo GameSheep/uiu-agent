@@ -121,15 +121,6 @@ def focus_window(hwnd: int) -> str:
         except Exception:
             pass
 
-        # Simulate Alt key tap to reset Windows foreground lock timer
-        try:
-            VK_MENU = 0x12
-            KEYEVENTF_KEYUP = 0x0002
-            ctypes.windll.user32.keybd_event(VK_MENU, 0, 0, 0)
-            ctypes.windll.user32.keybd_event(VK_MENU, 0, KEYEVENTF_KEYUP, 0)
-        except Exception:
-            pass
-
         fg = win32gui.GetForegroundWindow()
         cur_tid = win32api.GetCurrentThreadId()
         fg_tid, _ = win32process.GetWindowThreadProcessId(int(fg or 0))

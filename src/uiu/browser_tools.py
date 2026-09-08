@@ -102,10 +102,29 @@ atexit.register(_shutdown_browser)
 
 
 def _page():
-    """Return a playwright page, creating a headless chromium on first use."""
+    """Return an active Playwright page, preferentially attaching to the user's host browser via CDP."""
     global _PAGE
     if _PAGE is not None:
-        return _PAGE
+        try:
+            if not _PAGE.is_closed():
+                return _PAGE
+        except Exception:
+            pass
+        _PAGE = None
+
+    # 1. Prefer user's real browser session via CDP (Chrome / Edge / Brave)
+    try:
+        from .browser_connect import get_active_browser_session, attach_default_browser, is_cdp_ready
+        if is_cdp_ready():
+            session = get_active_browser_session() or attach_default_browser()
+            p = session.get_active_page()
+            if p and not p.is_closed():
+                _PAGE = p
+                return _PAGE
+    except Exception:
+        pass
+
+    # 2. Fallback to headless / standalone browser
     from playwright.sync_api import sync_playwright
     pw = sync_playwright().start()
     browser = pw.chromium.launch(headless=True)

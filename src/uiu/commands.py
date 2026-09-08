@@ -1198,3 +1198,73 @@ def cmd_macro(args) -> int:
         return 0 if out.startswith("[ok]") else 2
 
     return 2
+
+
+# ---------- daemon ----------
+
+def cmd_daemon(args) -> int:
+    from . import daemon as _daemon
+    ws = _workspace(args)
+    action = args.action
+
+    if action == "start":
+        ok, msg = _daemon.start_daemon(ws)
+        if ok:
+            _print_ok(msg)
+            return 0
+        else:
+            _print_err(msg)
+            return 2
+
+    if action == "stop":
+        ok, msg = _daemon.stop_daemon()
+        if ok:
+            _print_ok(msg)
+            return 0
+        else:
+            _print_err(msg)
+            return 2
+
+    if action == "status":
+        info = _daemon.status_daemon(ws)
+        if info["running"]:
+            _print_ok(f"守护进程运行中 (PID: {info['pid']})")
+        else:
+            print("守护进程未运行 (未启动)")
+        print(f"  工作目录: {info['workspace']}")
+        print(f"  日志文件: {info['log_path']}")
+        print(f"  定时任务: 共 {info['total_jobs']} 个，已启用 {info['enabled_jobs']} 个")
+        if info["jobs"]:
+            import time as _t
+            for j in info["jobs"]:
+                nxt = _t.strftime("%m-%d %H:%M", _t.localtime(j["next_run"])) if j.get("next_run") else "-"
+                flag = "on" if j.get("enabled") else "off"
+                kind = "[shell]" if j.get("run_shell") else "[agent]"
+                print(f"    - {j['name']:<18} [{flag}] {j['schedule']:<12} 下次: {nxt} {kind}")
+        return 0
+
+    if action == "run":
+        interval = getattr(args, "interval", 60)
+        print(f"[daemon] 正在前台运行定时任务循环（每 {interval} 秒检查一次）... 按 Ctrl+C 退出")
+        _daemon.run_daemon(ws, interval=interval)
+        return 0
+
+    if action == "install-autostart":
+        ok, msg = _daemon.install_autostart(ws)
+        if ok:
+            _print_ok(msg)
+            return 0
+        else:
+            _print_err(msg)
+            return 2
+
+    if action == "uninstall-autostart":
+        ok, msg = _daemon.uninstall_autostart()
+        if ok:
+            _print_ok(msg)
+            return 0
+        else:
+            _print_err(msg)
+            return 2
+
+    return 2

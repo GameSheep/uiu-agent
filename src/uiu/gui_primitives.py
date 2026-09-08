@@ -142,12 +142,7 @@ def press_key(key_name: str, presses: int = 1, interval: float = 0.05) -> str:
         return f"[error] 非法按键名: {name}"
     ag = _get_pyautogui()
     try:
-        try:
-            from .ime_controller import preserve_ime_mode
-            with preserve_ime_mode():
-                ag.press(name, presses=presses, interval=interval)
-        except Exception:
-            ag.press(name, presses=presses, interval=interval)
+        ag.press(name, presses=presses, interval=interval)
         return f"[ok] 已按键 '{key_name}' {presses} 次"
     except Exception as e:
         return f"[error] 单键输入失败: {type(e).__name__}: {e}"
@@ -162,33 +157,20 @@ def paste_text(text: str, clear_before: bool = False) -> str:
         import win32clipboard
         import win32con
 
-        try:
-            from .ime_controller import preserve_ime_mode
-            ime_ctx = preserve_ime_mode()
-        except Exception:
-            ime_ctx = None
-
-        def _do_paste():
-            if clear_before:
-                ag.hotkey("ctrl", "a")
-                time.sleep(0.02)
-                ag.press("backspace")
-                time.sleep(0.02)
-
-            win32clipboard.OpenClipboard()
-            win32clipboard.EmptyClipboard()
-            win32clipboard.SetClipboardData(win32con.CF_UNICODETEXT, text)
-            win32clipboard.CloseClipboard()
+        if clear_before:
+            ag.hotkey("ctrl", "a")
+            time.sleep(0.02)
+            ag.press("backspace")
             time.sleep(0.02)
 
-            ag.hotkey("ctrl", "v")
-            time.sleep(0.05)
+        win32clipboard.OpenClipboard()
+        win32clipboard.EmptyClipboard()
+        win32clipboard.SetClipboardData(win32con.CF_UNICODETEXT, text)
+        win32clipboard.CloseClipboard()
+        time.sleep(0.02)
 
-        if ime_ctx:
-            with ime_ctx:
-                _do_paste()
-        else:
-            _do_paste()
+        ag.hotkey("ctrl", "v")
+        time.sleep(0.05)
 
         return f"[ok] 已成功粘贴文本（长度: {len(text)}）"
     except Exception as e:

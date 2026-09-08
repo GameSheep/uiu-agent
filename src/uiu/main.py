@@ -214,6 +214,17 @@ def _build_parser() -> argparse.ArgumentParser:
     pdoc.add_argument("--fix", action="store_true", help="apply auto-fixes (prompts per item)")
     pdoc.add_argument("--yes", action="store_true", help="with --fix: apply all without prompting")
 
+    # daemon (background cron service)
+    pdm = sub.add_parser("daemon", help="manage background cron daemon and autostart")
+    pdm_sub = pdm.add_subparsers(dest="action", metavar="<action>", required=True)
+    pdm_sub.add_parser("start", help="start background daemon (zero-window)")
+    pdm_sub.add_parser("stop", help="stop running background daemon")
+    pdm_sub.add_parser("status", help="show background daemon status and scheduled jobs")
+    pdm_run = pdm_sub.add_parser("run", help="run daemon loop in foreground")
+    pdm_run.add_argument("--interval", type=int, default=60, help="cron tick interval in seconds (default 60)")
+    pdm_sub.add_parser("install-autostart", help="register Windows startup script for boot persistence")
+    pdm_sub.add_parser("uninstall-autostart", help="remove Windows startup script")
+
     return p
 
 
@@ -352,7 +363,7 @@ def _print_welcome(ws_path) -> None:
     print("")
 def _dispatch(args, parser: argparse.ArgumentParser) -> int:
     from .commands import (
-        cmd_channel, cmd_config, cmd_cron, cmd_doctor, cmd_init, cmd_macro, cmd_model,
+        cmd_channel, cmd_config, cmd_cron, cmd_daemon, cmd_doctor, cmd_init, cmd_macro, cmd_model,
         cmd_sessions, cmd_show, cmd_update, cmd_version, cmd_skills, cmd_publish, cmd_plugins,
         cmd_serve,
     )
@@ -372,6 +383,7 @@ def _dispatch(args, parser: argparse.ArgumentParser) -> int:
         "plugins": cmd_plugins,
         "serve": cmd_serve,
         "cron": cmd_cron,
+        "daemon": cmd_daemon,
         "sessions": cmd_sessions,
         "macro": cmd_macro,
         "doctor": cmd_doctor,

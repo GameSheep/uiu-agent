@@ -78,6 +78,11 @@ def macro_play(name: str, speed: float = 1.0, start: int = 0, end: int = 0) -> s
     path = _macro_path(safe)
     if path is None or not path.exists():
         return f"[error] 宏不存在: {safe}（先 macro_record 或写 workspace/macros/{safe}.json）"
+
+    from .desktop_guard import check_desktop_action_allowed
+    allowed, reason = check_desktop_action_allowed("macro_play")
+    if not allowed:
+        return f"[error] {reason}"
     try:
         macro = load_macro(path)
     except Exception as e:

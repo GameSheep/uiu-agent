@@ -45,6 +45,7 @@ def test_macro_below_threshold_no_suggestion(tmp_cwd):
 def test_macro_play_records_usage(tmp_cwd, monkeypatch):
     """macro_play 成功后写 usage.json（AI 生成宏闭环）。"""
     from uiu.macro_recorder import macros_dir
+    from uiu.desktop_guard import ExecutionContext, execution_guard
     import json
     root = _root(tmp_cwd)
     (macros_dir(root) / "m.json").write_text(json.dumps(
@@ -52,7 +53,8 @@ def test_macro_play_records_usage(tmp_cwd, monkeypatch):
         ensure_ascii=False), encoding="utf-8")
     from uiu.macros import macro_play
     monkeypatch.setattr("uiu.macro_player.press_key", lambda **k: "[ok]")
-    out = macro_play("m")
+    with execution_guard(ExecutionContext.USER_DIALOGUE):
+        out = macro_play("m")
     assert "1 步" in out
     usage = json.loads((root / "usage.json").read_text(encoding="utf-8"))
     assert usage["macro_plays"]["m"] == 1

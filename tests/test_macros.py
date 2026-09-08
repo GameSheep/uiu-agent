@@ -178,7 +178,9 @@ def test_macro_play_tool_roundtrip(tmp_cwd, monkeypatch):
     monkeypatch.setattr("uiu.macro_player.mouse_click", lambda **k: calls.append("click") or "[ok]")
     monkeypatch.setattr("uiu.macro_player.paste_text", lambda **k: calls.append("type") or "[ok]")
     monkeypatch.setattr("uiu.macro_player.press_key", lambda **k: calls.append("key") or "[ok]")
-    out = macro_play("ai_gen")
+    from uiu.desktop_guard import execution_guard, ExecutionContext
+    with execution_guard(ExecutionContext.USER_DIALOGUE):
+        out = macro_play("ai_gen")
     assert "3 步" in out and calls == ["click", "type", "key"]
 
 

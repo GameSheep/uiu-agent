@@ -363,6 +363,33 @@ def run_turn(
     on_notice receives retry/compact notices (shown dim, not sent to the model).
     Returns the final assistant text.
     """
+    from .desktop_guard import ExecutionContext, execution_guard, get_current_context
+    cur_ctx = get_current_context()
+    target_ctx = cur_ctx if cur_ctx != ExecutionContext.IDLE else ExecutionContext.USER_DIALOGUE
+
+    with execution_guard(target_ctx, source="agent:run_turn"):
+        return _run_turn_inner(
+            client=client, messages=messages, tool_schemas=tool_schemas,
+            skills=skills, model=model, cfg=cfg,
+            on_text=on_text, on_thought=on_thought,
+            on_tool_call=on_tool_call, on_tool_result=on_tool_result,
+            on_notice=on_notice,
+        )
+
+
+def _run_turn_inner(
+    client: OpenAI,
+    messages: list[dict],
+    tool_schemas: list[dict],
+    skills: list | None = None,
+    model: str = "",
+    cfg: ModelConfig | None = None,
+    on_text: Callable[[str], None] | None = None,
+    on_thought: Callable[[str], None] | None = None,
+    on_tool_call: Callable[[str, dict], None] | None = None,
+    on_tool_result: Callable[[str, str], None] | None = None,
+    on_notice: Callable[[str], None] | None = None,
+) -> str:
     import time as _time
 
     if not model:

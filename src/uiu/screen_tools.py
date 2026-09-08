@@ -550,23 +550,14 @@ def click_text(text: str, click_count: int = 1) -> str:
 def type_text(text: str, interval: float = 0.02) -> str:
     """Type text into the focused input (after click_text focuses it)."""
     import pyautogui
-    has_cjk = any("\u4e00" <= ch <= "\u9fff" for ch in text)
-    if has_cjk:
-        try:
-            from .system_tools import clipboard_set
-            clipboard_set(text)
-            pyautogui.hotkey("ctrl", "v")
-            return f"[ok] 已输入 {len(text)} 字符（剪贴板）"
-        except Exception:
-            pass
-    else:
-        try:
-            from .ime_tools import ensure_english_ime
-            ensure_english_ime()
-        except Exception:
-            pass
-    pyautogui.write(text, interval=interval)
-    return f"[ok] 已输入 {len(text)} 字符"
+    try:
+        from .system_tools import clipboard_set
+        clipboard_set(text)
+        pyautogui.hotkey("ctrl", "v")
+        return f"[ok] 已输入 {len(text)} 字符（剪贴板）"
+    except Exception:
+        pyautogui.write(text, interval=interval)
+        return f"[ok] 已输入 {len(text)} 字符"
 
 
 def press_key(keys: str) -> str:

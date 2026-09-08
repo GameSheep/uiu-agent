@@ -49,14 +49,17 @@ def test_resilient_click_end_to_end():
 
 def test_desktop_tools_resilient_dispatch():
     from uiu.desktop_tools import dispatch_tool
+    from uiu.desktop_guard import ExecutionContext, execution_guard
 
     mock_res = {"success": True, "tier_used": "ocr", "x": 50, "y": 60}
-    with patch("uiu.auto_recovery.resilient_click", return_value=mock_res):
-        out = dispatch_tool("resilient_click", {"target": "保存"})
-        data = json.loads(out)
-        assert data["success"] is True
+    with execution_guard(ExecutionContext.USER_DIALOGUE):
+        with patch("uiu.auto_recovery.resilient_click", return_value=mock_res):
+            out = dispatch_tool("resilient_click", {"target": "保存"})
+            data = json.loads(out)
+            assert data["success"] is True
 
-    with patch("uiu.auto_recovery.wait_screen_stable", return_value=True):
-        out = dispatch_tool("wait_screen_stable", {"max_wait_ms": 1000})
-        data = json.loads(out)
-        assert data["stable"] is True
+        with patch("uiu.auto_recovery.wait_screen_stable", return_value=True):
+            out = dispatch_tool("wait_screen_stable", {"max_wait_ms": 1000})
+            data = json.loads(out)
+            assert data["stable"] is True
+

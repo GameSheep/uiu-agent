@@ -136,37 +136,60 @@ class MacroRecorder:
                                       "clicks": clicks, "ts": time.time()})
         return _user32.CallNextHookEx(self._mouse_hook, code, wparam, lparam)
 
-    # ---- 消息泵线程 ----
-    def _pump(self):
-        msg = wintypes.MSG()
-        while not self._stop.is_set():
-            r = _user32.GetMessageW(ctypes.byref(msg), None, 0, 0)
-            if r <= 0:
-                break
-            _user32.TranslateMessage(ctypes.byref(msg))
-            _user32.DispatchMessageW(ctypes.byref(msg))
+    def _unhook(self):
+        if self._kb_hook:
+            try:
+                _user32.UnhookWindowsHookEx(self._kb_hook)
+            except Exception:
+                pass
+            self._kb_hook = None
+        if self._mouse_hook:
+            try:
+                _user32.UnhookWindowsHookEx(self._mouse_hook)
+            except Exception:
+                pass
+            self._mouse_hook = None
 
-    def start(self) -> None:
-        """Install hooks and start the message-pump thread."""
+    # ---- 消息泵线程：必须由安装钩子的同一线程负责派发，否则导致 Windows 系统级按键卡顿丢键 ----
+    def _pump(self):
         self._kb_cb_ref = HOOKPROC(self._kb_cb)
         self._mouse_cb_ref = HOOKPROC(self._mouse_cb)
-        # 低级钩子（LL）hMod 必须传 NULL：表示当前进程内安装，传模块句柄反而失败
         self._kb_hook = _user32.SetWindowsHookExW(WH_KEYBOARD_LL, self._kb_cb_ref, None, 0)
         self._mouse_hook = _user32.SetWindowsHookExW(WH_MOUSE_LL, self._mouse_cb_ref, None, 0)
+        self._started_event.set()
+
+        if not self._kb_hook or not self._mouse_hook:
+            self._unhook()
+            return
+
+        msg = wintypes.MSG()
+        try:
+            while not self._stop.is_set():
+                if _user32.PeekMessageW(ctypes.byref(msg), None, 0, 0, 1):
+                    _user32.TranslateMessage(ctypes.byref(msg))
+                    _user32.DispatchMessageW(ctypes.byref(msg))
+                else:
+                    time.sleep(0.005)
+        finally:
+            self._unhook()
+
+    def start(self) -> None:
+        """Start the message-pump thread which installs hooks on its own message loop."""
+        import atexit
+        atexit.register(self.stop)
+        self._started_event = threading.Event()
+        self._thread = threading.Thread(target=self._pump, daemon=True)
+        self._thread.start()
+        self._started_event.wait(timeout=2.0)
         if not self._kb_hook or not self._mouse_hook:
             self.stop()
             raise RuntimeError(f"安装全局钩子失败（kb={self._kb_hook}, mouse={self._mouse_hook}）")
-        self._thread = threading.Thread(target=self._pump, daemon=True)
-        self._thread.start()
 
     def stop(self) -> None:
         self._stop.set()
-        if self._kb_hook:
-            _user32.UnhookWindowsHookEx(self._kb_hook)
-            self._kb_hook = None
-        if self._mouse_hook:
-            _user32.UnhookWindowsHookEx(self._mouse_hook)
-            self._mouse_hook = None
+        self._unhook()
+        if self._thread and self._thread.is_alive():
+            self._thread.join(timeout=0.5)
 
     def run(self) -> tuple[list[dict], bool]:
         """Block until stop key / timeout. Returns (steps, aborted_by_key)."""

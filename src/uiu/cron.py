@@ -283,37 +283,40 @@ def _run_shell_job(job: dict) -> str:
 
 def run_job(workspace: Path, job: dict, timeout: int = 180) -> str:
     """Run one job with a fresh agent loop (or shell if run_shell). Returns output markdown path."""
-    ws_path = Path(workspace)
-    if job.get("run_shell"):
-        reply = _run_shell_job(job)
-    else:
-        from .config import load_config
-        from .llm import make_client
-        from .workspace import load_workspace
-        from .agent import run_turn
-        from .gateway import _build_tool_schemas
+    from .desktop_guard import execution_guard, ExecutionContext
 
-        cfg = load_config(ws_path)
-        ws = load_workspace(ws_path)
-        client = make_client(cfg.model)
-        messages = [
-            {"role": "system", "content": ws.system_prompt()},
-            {"role": "user", "content": f"[cron:{job.get('name')}] {job.get('task')}"},
-        ]
-        try:
-            reply = run_turn(
-                client=client, messages=messages,
-                tool_schemas=_build_tool_schemas(ws), skills=ws.skills,
-                model=cfg.model.default, cfg=cfg.model,
-            )
-        except Exception as e:
-            reply = f"[cron error] {type(e).__name__}: {e}"
-    ts = time.strftime("%Y%m%d_%H%M%S")
-    out_dir = cron_dir(ws_path) / "output" / job["id"]
-    out_dir.mkdir(parents=True, exist_ok=True)
-    out_path = out_dir / f"{ts}.md"
-    out_path.write_text(f"# {job.get('name')} @ {ts}\n\n{reply}\n", encoding="utf-8")
-    return str(out_path)
+    ws_path = Path(workspace)
+    with execution_guard(ExecutionContext.CRON_SCHEDULED_RUN, source=f"cron:{job.get('id', job.get('name', 'job'))}"):
+        if job.get("run_shell"):
+            reply = _run_shell_job(job)
+        else:
+            from .config import load_config
+            from .llm import make_client
+            from .workspace import load_workspace
+            from .agent import run_turn
+            from .gateway import _build_tool_schemas
+
+            cfg = load_config(ws_path)
+            ws = load_workspace(ws_path)
+            client = make_client(cfg.model)
+            messages = [
+                {"role": "system", "content": ws.system_prompt()},
+                {"role": "user", "content": f"[cron:{job.get('name')}] {job.get('task')}"},
+            ]
+            try:
+                reply = run_turn(
+                    client=client, messages=messages,
+                    tool_schemas=_build_tool_schemas(ws), skills=ws.skills,
+                    model=cfg.model.default, cfg=cfg.model,
+                )
+            except Exception as e:
+                reply = f"[cron error] {type(e).__name__}: {e}"
+        ts = time.strftime("%Y%m%d_%H%M%S")
+        out_dir = cron_dir(ws_path) / "output" / job["id"]
+        out_dir.mkdir(parents=True, exist_ok=True)
+        out_path = out_dir / f"{ts}.md"
+        out_path.write_text(f"# {job.get('name')} @ {ts}\n\n{reply}\n", encoding="utf-8")
+        return str(out_path)
 
 
 def _reschedule(job: dict, now: float) -> None:

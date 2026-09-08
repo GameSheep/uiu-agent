@@ -642,13 +642,104 @@ DESKTOP_TOOL_SCHEMAS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "browser_default_attach",
-            "description": "接管用户日常 Chrome/Edge 浏览器：免登录、保留全部 Cookie 与已打开标签页，通过 CDP 9222 调试端点附着至当前活动页面。",
+            "description": "接管用户日常 Chrome/Edge/Brave 浏览器：免登录、保留全部 Cookie 与已打开标签页，通过 CDP 调试端点附着至当前活动页面。",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "port": {"type": "integer", "description": "CDP 调试端口（默认 9222）", "default": 9222},
-                    "auto_restart": {"type": "boolean", "description": "若浏览器运行中但未开启 9222 端口，是否允许平滑重挂载（带 --restore-last-session）", "default": False}
+                    "browser": {
+                        "type": "string",
+                        "enum": ["auto", "chrome", "edge", "brave"],
+                        "description": "目标浏览器类型：'auto' 自动读取 Windows 系统默认浏览器，亦可显式指定 'chrome' 或 'edge'",
+                        "default": "auto"
+                    },
+                    "auto_restart": {"type": "boolean", "description": "若浏览器运行中但未开启调试端口，是否允许平滑重挂载（带 --restore-last-session）", "default": False}
                 }
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "browser_tabs_manage",
+            "description": "管理已接管浏览器的标签页：列出所有标签页(list)、去重打开或激活网址(open)、切换到指定标题/网址的标签页(switch)、或关闭标签页(close)。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["list", "open", "switch", "close"],
+                        "description": "操作类型：list 列出所有Tab, open 打开或去重唤醒URL, switch 切换Tab, close 关闭Tab",
+                        "default": "list"
+                    },
+                    "target": {
+                        "type": "string",
+                        "description": "标签页序号（从0开始）或标题/网址包含的关键字（用于 switch 和 close）",
+                        "default": ""
+                    },
+                    "url": {
+                        "type": "string",
+                        "description": "要打开或激活的网址（用于 open）",
+                        "default": ""
+                    }
+                },
+                "required": ["action"]
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "browser_content_extract",
+            "description": "从已接管浏览器当前页面中高精度提取内容（支持 markdown 结构化正文、table 结构化表格、text 纯文本、html 节点代码），告别 OCR 模糊与换行错位。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "mode": {
+                        "type": "string",
+                        "enum": ["markdown", "table", "text", "html"],
+                        "description": "提取模式：markdown 提取结构化正文与标题列表, table 提取结构化表格数据, text 纯文本, html 元素代码",
+                        "default": "markdown"
+                    },
+                    "selector": {
+                        "type": "string",
+                        "description": "可选 CSS 选择器限定提取区域（如 'article', '.main', 'table', '#content'）",
+                        "default": ""
+                    },
+                    "max_chars": {
+                        "type": "integer",
+                        "description": "最大截断字符数（默认 4000）",
+                        "default": 4000
+                    }
+                }
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "browser_eval_js",
+            "description": "在已接管浏览器的活动页面上下文安全执行自定义 JavaScript 脚本并返回序列化结果。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "script": {
+                        "type": "string",
+                        "description": "要执行的 JavaScript 表达式或自执行函数代码，如 'document.title' 或 '(() => ({ count: document.querySelectorAll(\"a\").length }))()'"
+                    }
+                },
+                "required": ["script"]
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "browser_list_installed",
+            "description": "扫描当前系统上已安装的全部现代浏览器（Chrome, Edge, Brave等），返回可执行路径、配置目录、默认浏览器标识及当前运行状态。",
+            "parameters": {
+                "type": "object",
+                "properties": {}
             },
         },
     },
@@ -740,6 +831,11 @@ def get_all_tool_schemas() -> list[dict[str, Any]]:
 
 def dispatch_tool(name: str, args: dict[str, Any]) -> str:
     """Agent 执行工具调用的唯一统一分发入口"""
+    from .desktop_guard import check_desktop_action_allowed
+    allowed, reason = check_desktop_action_allowed(name)
+    if not allowed:
+        return f"[error] {reason}"
+
     try:
         if name == "send_wechat":
             return send_wechat(**args)
@@ -1046,13 +1142,63 @@ def dispatch_tool(name: str, args: dict[str, Any]) -> str:
             from .browser_connect import attach_default_browser, ensure_browser_with_cdp
             port = int(args.get("port", 9222))
             auto_restart = bool(args.get("auto_restart", False))
-            status = ensure_browser_with_cdp(port=port, auto_restart=auto_restart)
+            target_browser = args.get("browser", "auto")
+            status = ensure_browser_with_cdp(port=port, browser=target_browser, auto_restart=auto_restart)
             if not status.get("ready"):
                 return f"[warning] 浏览器挂接未就绪: {status.get('message')}"
-            session = attach_default_browser(port=port)
+            session = attach_default_browser(port=port, browser=target_browser)
             page = session.get_active_page()
             tabs = session.list_tabs()
-            return f"[ok] 已成功接管日常浏览器（CDP 端口 {port}）。活动标签页: '{page.title()}' ({page.url})，共打开 {len(tabs)} 个标签页。"
+            b_name = status.get("browser", target_browser)
+            return f"[ok] 已成功接管日常浏览器 ({b_name}，CDP 端口 {port})。活动标签页: '{page.title()}' ({page.url})，当前打开 {len(tabs)} 个标签页。"
+
+        elif name == "browser_tabs_manage":
+            from .browser_connect import attach_default_browser, get_active_browser_session
+            session = get_active_browser_session() or attach_default_browser()
+            action = args.get("action", "list").lower()
+            if action == "list":
+                tabs = session.list_tabs()
+                return json.dumps(tabs, ensure_ascii=False, indent=2)
+            elif action == "open":
+                url = args.get("url") or args.get("target", "")
+                if not url:
+                    return "[error] open 操作需要提供 url 参数"
+                p = session.open_or_switch_tab(url)
+                return f"[ok] 已在浏览器中打开/激活页面: '{p.title()}' ({p.url})"
+            elif action == "switch":
+                target = args.get("target", "")
+                if not target:
+                    return "[error] switch 操作需要提供 target 参数 (序号或标题/网址关键字)"
+                p = session.switch_tab(target)
+                return f"[ok] 已成功切换至标签页: '{p.title()}' ({p.url})"
+            elif action == "close":
+                target = args.get("target", "")
+                ok = session.close_tab(target)
+                return f"[ok] 标签页 '{target}' 关闭成功" if ok else f"[warning] 未找到或未能关闭标签页 '{target}'"
+            else:
+                return f"[error] 未知 tabs_manage 动作: {action}"
+
+        elif name == "browser_content_extract":
+            from .browser_connect import attach_default_browser, get_active_browser_session
+            session = get_active_browser_session() or attach_default_browser()
+            mode = args.get("mode", "markdown")
+            sel = args.get("selector", "")
+            limit = int(args.get("max_chars", 4000))
+            content = session.extract_page_content(mode=mode, selector=sel, max_chars=limit)
+            p = session.get_active_page()
+            return f"### [页面提取: {p.title()[:30]}] ({mode})\n{content}"
+
+        elif name == "browser_eval_js":
+            from .browser_connect import attach_default_browser, get_active_browser_session
+            session = get_active_browser_session() or attach_default_browser()
+            script = args.get("script", "")
+            res = session.evaluate_script(script)
+            return json.dumps(res, ensure_ascii=False) if isinstance(res, (dict, list)) else str(res)
+
+        elif name == "browser_list_installed":
+            from .browser_connect import detect_all_installed_browsers
+            installed = detect_all_installed_browsers()
+            return json.dumps(installed, ensure_ascii=False, indent=2)
 
         elif name == "browser_explore_step":
             from .browser_connect import attach_default_browser, get_active_browser_session

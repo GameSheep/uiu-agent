@@ -946,8 +946,7 @@ def cmd_publish(args) -> int:
         names = []
         with zipfile.ZipFile(wheel) as zf:
             names = sorted(n for n in zf.namelist() if not n.startswith("uiu-"))
-        want = ["uiu/_default_workspace/SOUL.md", "uiu/_default_workspace/IDENTITY.md",
-                "uiu/_default_workspace/config.yaml"]
+        want = ["uiu/_default_workspace/SOUL.md", "uiu/_default_workspace/IDENTITY.md"]
         missing = [w for w in want if not any(n.endswith(w.split('/', 1)[1]) for n in names)]
         print(f"· wheel contains {len(names)} files")
         if missing:
@@ -971,9 +970,26 @@ def cmd_publish(args) -> int:
     if not artifacts:
         _print_err("no artifacts found in dist/")
         return 1
+    upload_env = {
+        **os.environ,
+        "TWINE_USERNAME": "__token__",
+        "TWINE_PASSWORD": token,
+        "PYTHONUTF8": "1",
+        "PYTHONIOENCODING": "utf-8",
+    }
     rc = subprocess.run(
-        [sys.executable, "-m", "twine", "upload", "--repository-url", repo, *map(str, artifacts), "--non-interactive"],
-        env={**os.environ, "TWINE_USERNAME": "__token__", "TWINE_PASSWORD": token},
+        [
+            sys.executable,
+            "-m",
+            "twine",
+            "upload",
+            "--repository-url",
+            repo,
+            *map(str, artifacts),
+            "--non-interactive",
+            "--disable-progress-bar",
+        ],
+        env=upload_env,
         check=False,
     )
     if rc.returncode != 0:

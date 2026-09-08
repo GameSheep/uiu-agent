@@ -5,6 +5,28 @@
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-09-08
+
+### Added
+- **多浏览器生态接管**：无缝支持 Windows 预装的 **Microsoft Edge**、**Google Chrome** 以及 **Brave** 浏览器。
+- **系统默认浏览器免配置识别**：读取注册表 `UserChoice` 自动侦测默认浏览器，支持 `browser="auto"` 零配置一键接管。
+- **已安装浏览器全局扫描体检**：`browser_list_installed` 工具，枚举系统所有可用浏览器、可执行文件路径及当前运行态。
+- **智能标签页管理 (`browser_tabs_manage`)**：
+  - 标签页枚举与模糊匹配（按索引或标题/网址关键字）；
+  - 防重复开标签与置顶激活（已打开同域名/页面时自动切换复用，杜绝标签页泛滥）；
+  - 安全关闭指定标签页。
+- **DOM 结构化极速提取 (`browser_content_extract`)**：
+  - `markdown` 模式直接将网页正文提取为整洁的 Markdown 文档；
+  - `table` 模式自动将 HTML `<table>` 转换为标准 Markdown 数据表格；
+  - `text` / `html` 模式与自定义 JavaScript 脚本执行 (`browser_eval_js`)。
+- **键鼠免干扰执行上下文守卫 (`desktop_guard.py`)**：
+  - 静默后台状态（无用户对话、非定时任务）物理拦截受控键鼠操作；
+  - 定时任务到点避让正在物理键鼠操作的人类用户；
+  - 修复后台意外抢夺焦点与键鼠吞键问题。
+
+### Changed
+- `src/uiu/browser_tools.py` 底层统一接入宿主浏览器 CDP 会话，保证全局浏览器操作一致性。
+
 ## [0.1.6] - 2026-09-08
 
 ### Added
@@ -36,4 +58,5 @@
 - **敏感工具硬确认门**：`send_wechat` / `shutdown` / `macro_play` 在 full-screen TUI 中必须通过内联确认弹窗才执行；无宿主注入时保持原行为。
 - 全局物理急停热键（`Ctrl+Alt+Shift+Q` / `Pause`）守护线程，遇突发异常毫秒级物理打断。
 
+[0.1.7]: https://github.com/GameSheep/uiu-agent/releases/tag/v0.1.7
 [0.1.6]: https://github.com/GameSheep/uiu-agent/releases/tag/v0.1.6

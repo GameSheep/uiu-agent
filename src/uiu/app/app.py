@@ -20,6 +20,7 @@ from .messages import (
     Interrupted,
     NoticeEvent,
     TextChunk,
+    ThoughtChunk,
     ToolCallEvent,
     ToolResultEvent,
     TurnDone,
@@ -420,6 +421,10 @@ class UiuApp(App[None]):
         st.ctx_pct = min(99, int((chars or 0) / 1200))
 
     # -- event handlers from the worker ----------------------------------
+
+    async def on_thought_chunk(self, event: ThoughtChunk) -> None:
+        chat = self.query_one("#chat", ChatView)
+        await chat.stream_thought(event.delta)
 
     async def on_text_chunk(self, event: TextChunk) -> None:
         chat = self.query_one("#chat", ChatView)

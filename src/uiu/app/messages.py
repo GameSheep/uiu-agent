@@ -11,6 +11,7 @@ from __future__ import annotations
 from textual.message import Message
 
 __all__ = [
+    "ThoughtChunk",
     "TextChunk",
     "ToolCallEvent",
     "ToolResultEvent",
@@ -19,6 +20,14 @@ __all__ = [
     "TurnError",
     "Interrupted",
 ]
+
+
+class ThoughtChunk(Message):
+    """A token (or slice) of assistant thinking/reasoning text."""
+
+    def __init__(self, delta: str) -> None:
+        super().__init__()
+        self.delta = delta
 
 
 class TextChunk(Message):

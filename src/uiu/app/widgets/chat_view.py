@@ -29,6 +29,8 @@ class Bubble(Widget):
         self._tool_rows: list[str] = []
 
     def compose(self) -> ComposeResult:
+        if self.role == "thought":
+            yield Label("💭 思考中 (Thinking...)", classes="thought-header")
         yield Markdown(self._text, id="md-body")
 
     def update_content(self, text: str) -> None:
@@ -82,6 +84,22 @@ class ChatView(VerticalScroll):
         background: $error 15%;
         border: none;
     }
+    ChatView Bubble.-thought {
+        height: auto;
+        background: transparent;
+        color: $text-muted;
+        margin: 0 0 1 0;
+        padding: 0 1;
+        border: none;
+    }
+    ChatView Bubble.-thought .thought-header {
+        color: $text-muted;
+        text-style: bold italic;
+        margin: 0 0 0 0;
+    }
+    ChatView Bubble.-thought #md-body {
+        color: $text-muted;
+    }
     ChatView #empty-hint {
         height: auto;
         margin: 1 2;
@@ -128,13 +146,14 @@ class ChatView(VerticalScroll):
         self.agent_name = agent_name
         self._stick = True
         self._active: Bubble | None = None
+        self._active_thought: Bubble | None = None
 
     async def on_mount(self) -> None:
         await self.show_empty_hint()
 
     def _mk_bubble(self, role: str, text: str) -> Bubble:
         b = Bubble(role, text, agent_name=self.agent_name)
-        if role in ("user", "assistant", "notice", "error"):
+        if role in ("user", "assistant", "notice", "error", "thought"):
             b.set_classes("-" + role)
         return b
 
@@ -192,6 +211,7 @@ class ChatView(VerticalScroll):
         for child in list(self.children):
             await child.remove()
         self._active = None
+        self._active_thought = None
         await self.show_empty_hint()
 
     async def _remove_empty_hint(self) -> None:
@@ -206,28 +226,61 @@ class ChatView(VerticalScroll):
 
     async def add_user(self, text: str) -> None:
         await self._remove_empty_hint()
+        await self.finish_thought()
         b = self._mk_bubble("user", text)
         await self.mount(b)
         await self._auto_scroll()
 
     async def add_notice(self, text: str) -> None:
         await self._remove_empty_hint()
+        await self.finish_thought()
         await self.mount(self._mk_bubble("notice", text))
         await self._auto_scroll()
 
     async def add_error(self, message: str) -> None:
         await self._remove_empty_hint()
+        await self.finish_thought()
         await self.mount(self._mk_bubble("error", message))
         await self._auto_scroll()
+
+    async def begin_thought(self) -> None:
+        """Start a streaming thought bubble (markdown, dim/italic)."""
+        await self._remove_empty_hint()
+        if self._active_thought is not None:
+            return
+        self._active_thought = self._mk_bubble("thought", "")
+        await self.mount(self._active_thought)
+        await self._auto_scroll()
+
+    async def stream_thought(self, delta: str) -> None:
+        """Append tokens to the current thought bubble."""
+        if self._active_thought is None:
+            await self.begin_thought()
+        assert self._active_thought is not None
+        self._active_thought.update_content((self._active_thought.get_text() or "") + delta)
+        await self._auto_scroll()
+
+    async def finish_thought(self) -> None:
+        """Mark active thought bubble complete."""
+        if self._active_thought is not None:
+            try:
+                hdr = self._active_thought.query_one(".thought-header", Label)
+                hdr.update("💭 思考过程 (Thought)")
+            except Exception:
+                pass
+            self._active_thought = None
+            await self._auto_scroll()
 
     async def begin_assistant(self) -> None:
         """Start a streaming assistant bubble (markdown)."""
         await self._remove_empty_hint()
+        await self.finish_thought()
         self._active = self._mk_bubble("assistant", "")
         await self.mount(self._active)
         await self._auto_scroll()
 
     async def stream(self, delta: str) -> None:
+        await self.finish_thought()
         if self._active is None:
             await self.begin_assistant()
         assert self._active is not None
@@ -235,12 +288,14 @@ class ChatView(VerticalScroll):
         await self._auto_scroll()
 
     async def finish_assistant(self) -> None:
+        await self.finish_thought()
         self._active = None
         await self._auto_scroll()
 
     async def add_tool(self, name: str, ok: bool, preview: str) -> None:
         """Append a tool-invocation row (as a compact notice bubble)."""
         await self._remove_empty_hint()
+        await self.finish_thought()
         icon = "✓" if ok else "✗"
         line = f"{icon} {name}" + (f"  — {preview}" if preview else "")
         await self.mount(self._mk_bubble("notice", "`" + line + "`"))

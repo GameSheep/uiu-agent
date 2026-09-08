@@ -320,7 +320,24 @@ def repl(client: OpenAI, ws: Workspace, model: str = "", cfg=None, app_cfg=None)
                     _stream_markdown(text)
                 _stream_buf.clear()
 
+        _in_thought = [False]
+
+        def _on_thought(delta: str) -> None:
+            if not _in_thought[0]:
+                console.print(f"\n[dim italic]{_g('💭', '*')} 思考中: [/dim italic]", end="")
+                _in_thought[0] = True
+            console.print(f"[dim italic]{delta}[/dim italic]", end="")
+
+        def _on_text_wrapped(delta: str) -> None:
+            if _in_thought[0]:
+                console.print("\n")
+                _in_thought[0] = False
+            _on_text(delta)
+
         def _on_tool(name: str, args: dict) -> None:
+            if _in_thought[0]:
+                console.print("\n")
+                _in_thought[0] = False
             _print_tool_call(name, args)
 
         def _on_tool_result(name: str, result: str) -> None:
@@ -344,11 +361,15 @@ def repl(client: OpenAI, ws: Workspace, model: str = "", cfg=None, app_cfg=None)
                 skills=ws.skills,
                 model=model,
                 cfg=cfg,
-                on_text=_on_text,
+                on_text=_on_text_wrapped,
+                on_thought=_on_thought,
                 on_tool_call=_on_tool,
                 on_tool_result=_on_tool_result,
                 on_notice=_notice,
             )
+            if _in_thought[0]:
+                console.print("\n")
+                _in_thought[0] = False
             _finish_stream()
             state.mode = "idle"
             _notice(f"用时 {_time.time() - _turn_start:.1f}s")

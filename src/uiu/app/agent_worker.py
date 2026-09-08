@@ -25,6 +25,7 @@ from .messages import (
     Interrupted,
     NoticeEvent,
     TextChunk,
+    ThoughtChunk,
     ToolCallEvent,
     ToolResultEvent,
     TurnDone,
@@ -48,6 +49,12 @@ def agent_turn(
     from ..learning import register_memory_hook  # noqa: F401  (kept hot reload pattern parity)
 
     started = time.monotonic()
+
+    def on_thought(delta: str) -> None:
+        if cancel.is_set():
+            raise _Cancelled()
+        if delta:
+            emit(ThoughtChunk(delta))
 
     def on_text(delta: str) -> None:
         if cancel.is_set():
@@ -76,6 +83,7 @@ def agent_turn(
             model=model,
             cfg=cfg,
             on_text=on_text,
+            on_thought=on_thought,
             on_tool_call=on_tool_call,
             on_tool_result=on_tool_result,
             on_notice=on_notice,

@@ -144,8 +144,9 @@ def _call_once_stream(
     model: str,
     cfg: ModelConfig | None = None,
     on_text: Callable[[str], None] | None = None,
+    on_thought: Callable[[str], None] | None = None,
 ) -> dict:
-    """One chat call with streaming; text deltas go to on_text live.
+    """One chat call with streaming; text deltas go to on_text live, thought deltas to on_thought.
 
     Returns the assistant message dict (same shape as _call_once).
     """
@@ -182,6 +183,9 @@ def _call_once_stream(
         for block in final.content:
             if block.type == "text":
                 out["content"] += block.text
+            elif block.type == "thinking":
+                if on_thought and hasattr(block, "thinking"):
+                    on_thought(block.thinking)
             elif block.type == "tool_use":
                 tool_calls.append({
                     "id": block.id,
@@ -202,17 +206,56 @@ def _call_once_stream(
     )
     content_parts: list[str] = []
     tc_acc: dict[int, dict] = {}
+    in_think_tag = False
     for chunk in stream:
         if not chunk.choices:
             continue
         delta = chunk.choices[0].delta
         if delta is None:
             continue
+
+        # 1. Native reasoning_content (DeepSeek-R1 / V3 / Qwen / etc.)
+        thought_piece = getattr(delta, "reasoning_content", None)
+        if not thought_piece and hasattr(delta, "model_extra") and delta.model_extra:
+            thought_piece = delta.model_extra.get("reasoning_content")
+        if thought_piece:
+            if on_thought:
+                on_thought(thought_piece)
+
+        # 2. Content piece (with inline <think> tag handling)
         piece = getattr(delta, "content", None)
         if piece:
             content_parts.append(piece)
-            if on_text:
-                on_text(piece)
+            if "<think>" in piece or "</think>" in piece or in_think_tag:
+                remaining = piece
+                while remaining:
+                    if not in_think_tag:
+                        if "<think>" in remaining:
+                            pre, post = remaining.split("<think>", 1)
+                            if pre and on_text:
+                                on_text(pre)
+                            in_think_tag = True
+                            remaining = post
+                        else:
+                            if on_text:
+                                on_text(remaining)
+                            remaining = ""
+                    else:
+                        if "</think>" in remaining:
+                            th, post = remaining.split("</think>", 1)
+                            if th and on_thought:
+                                on_thought(th)
+                            in_think_tag = False
+                            remaining = post
+                        else:
+                            if on_thought:
+                                on_thought(remaining)
+                            remaining = ""
+            else:
+                if on_text:
+                    on_text(piece)
+
+        # 3. Tool calls
         for tc in getattr(delta, "tool_calls", None) or []:
             e = tc_acc.setdefault(tc.index, {"id": "", "name": "", "args": ""})
             if getattr(tc, "id", None):
@@ -307,13 +350,14 @@ def run_turn(
     model: str = "",
     cfg: ModelConfig | None = None,
     on_text: Callable[[str], None] | None = None,
+    on_thought: Callable[[str], None] | None = None,
     on_tool_call: Callable[[str, dict], None] | None = None,
     on_tool_result: Callable[[str, str], None] | None = None,
     on_notice: Callable[[str], None] | None = None,
 ) -> str:
     """Run a single user turn (may involve multiple LLM round-trips for tool use).
 
-    Text streams token-by-token via on_text as it is generated.
+    Text streams token-by-token via on_text, thought deltas via on_thought.
     Calls on_tool_call(name, args) before each tool execution.
     Calls on_tool_result(name, result) after.
     on_notice receives retry/compact notices (shown dim, not sent to the model).
@@ -342,8 +386,11 @@ def run_turn(
         last_err: Exception | None = None
         for attempt in range(4):
             try:
-                assistant_msg = _call_once_stream(client, messages, tool_schemas, model, cfg,
-                                                  on_text=on_text)
+                assistant_msg = _call_once_stream(
+                    client, messages, tool_schemas, model, cfg,
+                    on_text=on_text,
+                    on_thought=on_thought,
+                )
                 break
             except Exception as e:
                 last_err = e

@@ -965,9 +965,9 @@ def cmd_publish(args) -> int:
         repo = "https://upload.pypi.org/legacy/"
         print(f"· uploading to PyPI…")
 
-    # expand dist/* glob explicitly (Windows subprocess doesn't glob)
+    # expand dist/* glob explicitly (filtered by current version)
     dist_dir = Path("dist")
-    artifacts = sorted(dist_dir.glob("*.whl")) + sorted(dist_dir.glob("*.tar.gz"))
+    artifacts = sorted(dist_dir.glob(f"*{ver}*.whl")) + sorted(dist_dir.glob(f"*{ver}*.tar.gz"))
     if not artifacts:
         _print_err("no artifacts found in dist/")
         return 1

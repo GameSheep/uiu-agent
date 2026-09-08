@@ -1,6 +1,6 @@
 [project]
 name = "uiu"
-version = "1.0.0"
+version = "0.1.6"
 description = "A minimal personal-IP agent: SOUL-driven, skills-extensible, OpenAI-compatible CLI."
 readme = "README.md"
 requires-python = ">=3.10"

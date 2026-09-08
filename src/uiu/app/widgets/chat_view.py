@@ -58,16 +58,17 @@ class ChatView(VerticalScroll):
         width: 100%;
         margin: 0 0 1 0;
         padding: 0 1;
+        border: none;
     }
     ChatView Bubble.-user {
         height: auto;
-        background: $primary 18%;
-        border: round $primary;
+        background: $primary 15%;
+        border: none;
     }
     ChatView Bubble.-assistant {
         height: auto;
         background: $surface-lighten-1;
-        border: round $accent;
+        border: none;
     }
     ChatView Bubble.-notice {
         height: auto;
@@ -79,7 +80,7 @@ class ChatView(VerticalScroll):
     ChatView Bubble.-error {
         height: auto;
         background: $error 15%;
-        border: round $error;
+        border: none;
     }
     ChatView #empty-hint {
         height: auto;

@@ -111,6 +111,7 @@ def test_gui_primitives_with_dpi_anti_drift(monkeypatch):
             clicks_recorded.append((x, y, button))
 
     monkeypatch.setattr(gp, "_get_pyautogui", lambda: MockPyAutoGUI())
+    monkeypatch.setattr("uiu.dpi_manager.get_virtual_screen_bounds", lambda: (0, 0, 1920, 1080))
 
     # Normalized click (0.5, 0.5) -> should denormalize to screen midpoint
     res1 = gp.mouse_click(0.5, 0.5)

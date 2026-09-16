@@ -25,6 +25,66 @@ def test_lint_clean_workspace_ok(tmp_cwd):
     assert errs == [], [f.message for f in items]
 
 
+def test_flags_bad_tui_theme_and_colors(tmp_cwd):
+    """tui.theme / tui.colors typos become warnings, not silent fallbacks."""
+    from uiu.config import AppConfig, ensure_workspace, save_config
+    from uiu.doctor import _all_checks
+
+    root = _ws(tmp_cwd)
+    ensure_workspace(root)
+    cfg = AppConfig()
+    cfg.model.provider = "ollama"
+    cfg.tui = {"theme": "nope", "colors": {"primary": "not-a-color", "bogus": "#fff"}}
+    save_config(root, cfg)
+
+    ids = {f.id for f in _all_checks(root)}
+    assert "tui/unknown-theme" in ids
+    assert "tui/bad-color" in ids
+    assert "tui/unknown-color-slot" in ids
+
+
+def test_fix_repairs_tui_prefs(tmp_cwd):
+    """--fix resets an unknown theme and drops broken colour slots."""
+    from uiu.config import AppConfig, ensure_workspace, load_config, save_config
+    from uiu.doctor import Finding, _all_checks, _fix_one
+
+    root = _ws(tmp_cwd)
+    ensure_workspace(root)
+    cfg = AppConfig()
+    cfg.model.provider = "ollama"
+    cfg.tui = {"theme": "nope",
+               "colors": {"primary": "not-a-color", "bogus": "#fff", "accent": "#37D6C4"}}
+    save_config(root, cfg)
+
+    for f in _all_checks(root):
+        if f.id.startswith("tui/"):
+            assert f.can_fix, f"{f.id} should be auto-fixable"
+            ok, _msg = _fix_one(root, f)
+            assert ok, f.id
+
+    fixed = load_config(root)
+    assert fixed.tui["theme"] == "uiu-dark"
+    assert "primary" not in fixed.tui.get("colors", {})
+    assert "bogus" not in fixed.tui.get("colors", {})
+    assert fixed.tui["colors"].get("accent") == "#37D6C4"
+    assert not [f for f in _all_checks(root) if f.id.startswith("tui/")]
+
+
+def test_accepts_valid_tui_prefs(tmp_cwd):
+    from uiu.config import AppConfig, ensure_workspace, save_config
+    from uiu.doctor import _all_checks
+
+    root = _ws(tmp_cwd)
+    ensure_workspace(root)
+    cfg = AppConfig()
+    cfg.model.provider = "ollama"
+    cfg.tui = {"theme": "uiu-neon", "colors": {"primary": "#FF8800"}}
+    save_config(root, cfg)
+
+    ids = {f.id for f in _all_checks(root)}
+    assert not any(i.startswith("tui/") for i in ids), ids
+
+
 def test_detect_bad_api_mode(tmp_cwd):
     from uiu.config import ensure_workspace, AppConfig, save_config
     from uiu.doctor import _all_checks

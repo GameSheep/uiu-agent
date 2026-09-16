@@ -19,6 +19,36 @@ def test_save_load_roundtrip(tmp_path):
     assert len(back.channels) == 1 and back.channels[0].name == "tg"
 
 
+def test_config_cli_theme_and_color(tmp_path):
+    """uiu config --theme / --color write tui prefs; bad input exits 2."""
+    from argparse import Namespace
+
+    from uiu.commands import cmd_config
+    from uiu.config import load_config
+
+    def args(**kw):
+        base = dict(workspace=str(tmp_path), theme=None, color=None, agent_name="",
+                    api_key=None, set_secret=None, unset_secret=None, list=False,
+                    show_values=False)
+        base.update(kw)
+        return Namespace(**base)
+
+    assert cmd_config(args(theme="uiu-neon")) == 0
+    assert load_config(tmp_path).tui["theme"] == "uiu-neon"
+
+    assert cmd_config(args(theme="nope")) == 2
+    assert load_config(tmp_path).tui["theme"] == "uiu-neon"
+
+    assert cmd_config(args(color="primary=#FF8800")) == 0
+    assert load_config(tmp_path).tui["colors"]["primary"] == "#FF8800"
+
+    assert cmd_config(args(color="bogus=#fff")) == 2
+    assert cmd_config(args(color="primary=nonsense")) == 2
+
+    assert cmd_config(args(color="primary=")) == 0
+    assert "primary" not in (load_config(tmp_path).tui.get("colors") or {})
+
+
 def test_malformed_yaml_raises_friendly(tmp_path):
     from uiu.config import load_config
     ws = tmp_path / "ws"

@@ -43,6 +43,8 @@ test_send.py
 
 # debug artifacts (screenshots, OCR dumps, window lists)
 *.png
+# generated TUI previews: SVG 可入库（docs/tui-tour.md 直接引用），PNG 是本地渲染产物
+docs/preview/*.png
 *_out.txt
 windows_list.txt
 send_result.txt

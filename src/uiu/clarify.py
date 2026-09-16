@@ -16,6 +16,11 @@ def set_ask_handler(fn) -> None:
     _ask = fn
 
 
+def get_ask_handler():
+    """Current ask handler (None when no UI is attached)."""
+    return _ask
+
+
 def clarify(question: str, options: list[str] | None = None) -> str:
     """Ask the user a clarifying question and wait for the answer."""
     question = (question or "").strip()

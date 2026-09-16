@@ -94,6 +94,8 @@ def _build_parser() -> argparse.ArgumentParser:
     pc.add_argument("--list", action="store_true", help="list secrets")
     pc.add_argument("--show-values", action="store_true", help="don't redact values when --list")
     pc.add_argument("--agent-name", help="set agent display name (shown in TUI header/status)")
+    pc.add_argument("--theme", help="set TUI theme (uiu-dark / uiu-mono / uiu-neon / uiu-solar)")
+    pc.add_argument("--color", help="override one TUI color, e.g. --color primary=#4C9AFF")
 
     # skills
     psk = sub.add_parser("skills", help="search, install, and manage skills")
@@ -343,11 +345,25 @@ def _run_tui(args, parser: argparse.ArgumentParser) -> int:
     if not use_classic:
         try:
             from .app import run_app
-            return run_app(client, ws, model=cfg.model.default, cfg=cfg.model, app_cfg=cfg)
+            return run_app(client, ws, model=cfg.model.default, cfg=cfg.model,
+                           app_cfg=cfg, theme_name=_tui_theme(cfg))
         except Exception as _tui_err:
             print(f"[warn] full-screen TUI unavailable ({_tui_err}); falling back to REPL", file=sys.stderr)
     from .tui import repl
     return repl(client, ws, model=cfg.model.default, cfg=cfg.model, app_cfg=cfg)
+
+
+def _tui_theme(cfg) -> str:
+    """Theme name from config (tui.theme), falling back to the default."""
+    try:
+        from .app.theme import DEFAULT_THEME
+    except Exception:
+        return ""
+    try:
+        name = str((getattr(cfg, "tui", {}) or {}).get("theme", "") or "")
+        return name or DEFAULT_THEME
+    except Exception:
+        return DEFAULT_THEME
 
 
 def _print_welcome(ws_path) -> None:

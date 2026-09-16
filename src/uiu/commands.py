@@ -138,6 +138,22 @@ def cmd_show(args) -> int:
     print(f"  temperature: {m.temperature}")
     print(f"  max_tokens:  {m.max_tokens}")
     print()
+    print("tui:")
+    try:
+        from .app.theme import DEFAULT_THEME, THEMES
+        tui = getattr(cfg, "tui", {}) or {}
+        theme = str(tui.get("theme") or DEFAULT_THEME)
+        theme_note = "" if theme in THEMES else "  (未知主题，会回退默认)"
+        print(f"  theme:       {theme}{theme_note}")
+        colors = tui.get("colors") or {}
+        if colors:
+            for slot, value in colors.items():
+                print(f"  color.{slot}: {value}")
+        else:
+            print("  colors:      (无覆盖 — uiu config --color primary=#RRGGBB)")
+    except Exception:
+        pass
+    print()
     print(f"channels ({len(cfg.channels)}):")
     if not cfg.channels:
         print("  (none — try: uiu channel add telegram)")
@@ -381,6 +397,58 @@ def _resolve_key_env(ws: Path, cfg) -> str:
 def cmd_config(args) -> int:
     ws = _workspace(args)
 
+    if getattr(args, "color", None):
+        cfg = load_config(ws)
+        name, _, value = str(args.color).partition("=")
+        name, value = name.strip(), value.strip()
+        try:
+            from .app.theme import COLOR_FIELDS
+        except Exception:
+            COLOR_FIELDS = ()
+        if COLOR_FIELDS and name not in COLOR_FIELDS:
+            _print_err(f"unknown color slot: {name}（可选：{', '.join(COLOR_FIELDS)}）")
+            return 2
+        if not name:
+            _print_err("format: --color primary=#RRGGBB（清空用 --color primary=）")
+            return 2
+        if value:
+            try:
+                from textual.color import Color
+                Color.parse(value)
+            except Exception:
+                _print_err(f"invalid color: {value}（示例：--color primary=#4C9AFF 或 red）")
+                return 2
+        prefs = dict(getattr(cfg, "tui", {}) or {})
+        colors = dict(prefs.get("colors") or {})
+        if value:
+            colors[name] = value
+        else:
+            colors.pop(name, None)
+        prefs["colors"] = colors
+        cfg.tui = prefs
+        save_config(ws, cfg)
+        msg = f"TUI 配色 {name} = {value}" if value else f"TUI 配色 {name} 已清除"
+        _print_ok(msg)
+        return 0
+
+    if getattr(args, "theme", None):
+        cfg = load_config(ws)
+        want = str(args.theme).strip()
+        try:
+            from .app.theme import THEMES, theme_names
+            names = theme_names()
+        except Exception:
+            names = []
+        if names and want not in THEMES:
+            _print_err(f"unknown theme: {want}（可选：{', '.join(names)}）")
+            return 2
+        prefs = dict(getattr(cfg, "tui", {}) or {})
+        prefs["theme"] = want
+        cfg.tui = prefs
+        save_config(ws, cfg)
+        _print_ok(f"TUI 主题设为 {want}（下次启动生效；TUI 内 Ctrl+T 可即时切换）")
+        return 0
+
     if getattr(args, "agent_name", ""):
         cfg = load_config(ws)
         cfg.agent_name = args.agent_name.strip()[:32]
@@ -431,7 +499,8 @@ def cmd_config(args) -> int:
             print(f"  {k} = {shown}")
         return 0
 
-    print("usage: uiu config [--api-key KEY | --set-secret K=V | --unset-secret K | --list | --agent-name NAME]")
+    print("usage: uiu config [--api-key KEY | --set-secret K=V | --unset-secret K | "
+          "--list | --agent-name NAME | --theme NAME | --color SLOT=#RRGGBB]")
     return 2
 
 

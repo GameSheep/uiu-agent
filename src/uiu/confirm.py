@@ -25,6 +25,11 @@ def set_confirm_handler(fn: Callable[[str, str], str] | None) -> None:
     _confirm = fn
 
 
+def get_confirm_handler() -> Callable[[str, str], str] | None:
+    """Current confirm handler (None when no UI is attached)."""
+    return _confirm
+
+
 def needs_confirm(name: str) -> bool:
     return name in CONFIRM_TOOLS and _confirm is not None
 

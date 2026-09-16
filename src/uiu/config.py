@@ -110,6 +110,7 @@ class AppConfig:
     model: ModelConfig = field(default_factory=ModelConfig)
     channels: list[ChannelConfig] = field(default_factory=list)
     mcp_servers: list[dict[str, Any]] = field(default_factory=list)
+    tui: dict[str, Any] = field(default_factory=dict)   # UI 偏好：theme 等
 
     def to_dict(self) -> dict:
         return {
@@ -117,6 +118,7 @@ class AppConfig:
             "model": asdict(self.model),
             "channels": [asdict(c) for c in self.channels],
             "mcp_servers": self.mcp_servers,
+            "tui": self.tui,
         }
 
     @classmethod
@@ -130,11 +132,15 @@ class AppConfig:
             m["default"] = m.pop("model")
         channels = [ChannelConfig(**c) for c in (d.get("channels") or [])]
         mcp_servers = d.get("mcp_servers", [])
+        tui = d.get("tui") or {}
+        if not isinstance(tui, dict):
+            tui = {}
         return cls(
             agent_name=d.get("agent_name", "uiu"),
             model=ModelConfig(**m),
             channels=channels,
             mcp_servers=mcp_servers,
+            tui=tui,
         )
 
     def channel(self, name: str) -> ChannelConfig | None:

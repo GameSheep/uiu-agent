@@ -120,6 +120,38 @@ def _chk_model(root: Path) -> list[Finding]:
                            f"未设置 API key（{key_name}）",
                            fix_hint=f"uiu config --set-secret {key_name}=sk-xxx",
                            path=key_name, can_fix=False))
+    # TUI 主题：写错名字会让启动回退默认值，这里提前报出来
+    try:
+        from .app.theme import COLOR_FIELDS, DEFAULT_THEME, THEMES
+        tui = getattr(cfg, "tui", {}) or {}
+        theme = str(tui.get("theme", "") or "")
+        if theme and theme not in THEMES:
+            out.append(Finding("tui/unknown-theme", "warning",
+                               f"tui.theme '{theme}' 不是内置主题（会回退 {DEFAULT_THEME}）",
+                               fix_hint=f"可选：{', '.join(THEMES)}（--fix 会重置为 {DEFAULT_THEME}）",
+                               path="tui.theme", can_fix=True))
+        colors = tui.get("colors") or {}
+        if isinstance(colors, dict) and colors:
+            unknown = [k for k in colors if k not in COLOR_FIELDS]
+            if unknown:
+                out.append(Finding("tui/unknown-color-slot", "warning",
+                                   f"tui.colors 里有未知色位：{', '.join(unknown)}（会被忽略）",
+                                   fix_hint=f"可选：{', '.join(COLOR_FIELDS)}（--fix 会删掉未知色位）",
+                                   path="tui.colors", can_fix=True))
+            for slot, value in colors.items():
+                if slot not in COLOR_FIELDS:
+                    continue
+                try:
+                    from textual.color import Color
+                    Color.parse(str(value))
+                except Exception:
+                    out.append(Finding("tui/bad-color", "warning",
+                                       f"tui.colors.{slot} 颜色非法：{value}",
+                                       fix_hint="用 #RRGGBB 或颜色名（uiu config --color "
+                                                f"{slot}=#4C9AFF；--fix 会移除该色位）",
+                                       path=f"tui.colors.{slot}", can_fix=True))
+    except Exception:
+        pass
     return out
 
 
@@ -238,6 +270,32 @@ def _fix_one(root: Path, finding: Finding) -> tuple[bool, str]:
         if finding.id == "env/dotenv-missing":
             C.ensure_workspace(root)
             return True, "已创建 .env 模板"
+        if finding.id == "tui/unknown-theme":
+            from .app.theme import DEFAULT_THEME
+            cfg = C.load_config(root)
+            prefs = dict(getattr(cfg, "tui", {}) or {})
+            prefs["theme"] = DEFAULT_THEME
+            cfg.tui = prefs
+            C.save_config(root, cfg)
+            return True, f"tui.theme 已重置为 {DEFAULT_THEME}"
+        if finding.id in ("tui/bad-color", "tui/unknown-color-slot"):
+            from .app.theme import COLOR_FIELDS
+            cfg = C.load_config(root)
+            prefs = dict(getattr(cfg, "tui", {}) or {})
+            colors = dict(prefs.get("colors") or {})
+            if finding.id == "tui/bad-color":
+                slot = (finding.path or "").rsplit(".", 1)[-1]
+                colors.pop(slot, None)
+                note = f"已移除非法色位 {slot}"
+            else:
+                dropped = [k for k in colors if k not in COLOR_FIELDS]
+                for k in dropped:
+                    colors.pop(k, None)
+                note = f"已移除未知色位：{', '.join(dropped) or '(无)'}"
+            prefs["colors"] = colors
+            cfg.tui = prefs
+            C.save_config(root, cfg)
+            return True, note
     except Exception as e:
         return False, f"{type(e).__name__}: {e}"
     return False, "该项无自动修复（见 fix_hint 手动处理）"

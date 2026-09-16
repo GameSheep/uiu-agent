@@ -58,6 +58,23 @@ def list_sessions(workspace: Path) -> list[dict]:
     return out
 
 
+def recent_sessions(workspace: Path, limit: int = 8) -> list[dict]:
+    """Cheap listing (id + mtime only, no JSON parse) for live UI surfaces."""
+    out: list[dict] = []
+    try:
+        d = sessions_dir(workspace)
+        files = sorted(d.glob("*.json"),
+                       key=lambda p: p.stat().st_mtime, reverse=True)[:limit]
+    except Exception:
+        return out
+    for p in files:
+        try:
+            out.append({"id": p.stem, "updated": p.stat().st_mtime})
+        except Exception:
+            continue
+    return out
+
+
 def remove_session(workspace: Path, sid: str) -> bool:
     try:
         _path(workspace, sid).unlink()
@@ -162,8 +179,12 @@ def search_sessions(workspace: Path, query: str, limit: int = 5) -> list[dict]:
             "session": p.stem,
             "role": msgs[i]["role"],
             "text": excerpt,
-            "context": [{"role": msgs[j].get("role", "?"), "text": (msgs[j].get("content") or "")[:300]}
-                        for j in range(lo, hi) if j != i and isinstance(msgs[j].get("content"), str)],
+            "context": [{"role": msgs[j].get("role", "?"),
+                         "text": (msgs[j].get("content") or "")[:300]}
+                        for j in range(lo, hi)
+                        if j != i
+                        and msgs[j].get("role") in ("user", "assistant")
+                        and isinstance(msgs[j].get("content"), str)],
         })
     return out[:limit]
 

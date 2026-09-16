@@ -205,8 +205,12 @@ def _build_parser() -> argparse.ArgumentParser:
     pmc_play.add_argument("--to", dest="end", type=int, default=0, help="end step (inclusive)")
     pmc_play.add_argument("--yes", action="store_true", help="skip confirmation")
     pmc_sub.add_parser("list", help="list saved macros")
+    pmc_sub.add_parser("quick", help="start QuickMacro daemon (F10 record, F12 replay, F11 abort)")
     pmc_rm = pmc_sub.add_parser("remove", help="delete a macro")
     pmc_rm.add_argument("name")
+
+    # quick shortcut
+    sub.add_parser("quick", help="shortcut: start QuickMacro daemon (F10 record, F12 replay, F11 abort)")
 
     # doctor
     pdoc = sub.add_parser("doctor", help="diagnose & fix uiu configuration problems")
@@ -365,7 +369,7 @@ def _dispatch(args, parser: argparse.ArgumentParser) -> int:
     from .commands import (
         cmd_channel, cmd_config, cmd_cron, cmd_daemon, cmd_doctor, cmd_init, cmd_macro, cmd_model,
         cmd_sessions, cmd_show, cmd_update, cmd_version, cmd_skills, cmd_publish, cmd_plugins,
-        cmd_serve,
+        cmd_serve, cmd_quick,
     )
 
     if args.version or args.cmd == "version":
@@ -386,6 +390,7 @@ def _dispatch(args, parser: argparse.ArgumentParser) -> int:
         "daemon": cmd_daemon,
         "sessions": cmd_sessions,
         "macro": cmd_macro,
+        "quick": cmd_quick,
         "doctor": cmd_doctor,
     }
     handler = handlers.get(args.cmd)

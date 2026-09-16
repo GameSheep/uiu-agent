@@ -12,14 +12,15 @@ import time
 
 from .gui_primitives import mouse_click, mouse_scroll, paste_text, press_hotkey, press_key
 
-# 中止检测：F9（与录制同键）；pyautogui FAILSAFE 在 gui_primitives 内部已生效
-_STOP_VK = 0x78
+# 中止检测：F9 或 F11（经典按键精灵中止键）；pyautogui FAILSAFE 在 gui_primitives 内部已生效
+_STOP_VKS = (0x78, 0x7A)
 
 
 def _stop_pressed() -> bool:
     try:
         import ctypes
-        return bool(ctypes.windll.user32.GetAsyncKeyState(_STOP_VK) & 0x8000)
+        u32 = ctypes.windll.user32
+        return any(bool(u32.GetAsyncKeyState(vk) & 0x8000) for vk in _STOP_VKS)
     except Exception:
         return False
 

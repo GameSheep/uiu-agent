@@ -1207,6 +1207,32 @@ def cmd_macro(args) -> int:
         print(f"{status}（{played}/{len(steps)} 步）")
         return 0
 
+    if action == "quick":
+        from .quick_macro import QuickMacroDaemon
+        import time as _t
+        print("╭────────────────────────────────────────────────────────╮")
+        print("│  ⚡ uiu 极速按键精灵 (Quick Macro)                     │")
+        print("│                                                        │")
+        print("│  [F10]      开始录制 / 结束录制（保存为循环宏）         │")
+        print("│  [F12]      单次回放刚才录制的动作                     │")
+        print("│  [Ctrl+F12] 连续循环 10 次                             │")
+        print("│  [F11]      紧急刹车 / 强制中止                        │")
+        print("│                                                        │")
+        print("│  提示：操作全程伴随系统蜂鸣音提示，无需切回本终端。     │")
+        print("│  按 Ctrl+C 退出精灵守护模式。                          │")
+        print("╰────────────────────────────────────────────────────────╯")
+        daemon = QuickMacroDaemon(ws, on_status_change=lambda st, msg: print(f"  [{st}] {msg}"))
+        daemon.start()
+        try:
+            while True:
+                _t.sleep(0.5)
+        except KeyboardInterrupt:
+            print("\n· 正在退出按键精灵守护...")
+        finally:
+            daemon.stop()
+            print("[ok] 已退出")
+        return 0
+
     if action == "remove":
         from . import macros as _macros_mod
         out = _macros_mod.macro_remove(args.name)
@@ -1214,6 +1240,12 @@ def cmd_macro(args) -> int:
         return 0 if out.startswith("[ok]") else 2
 
     return 2
+
+
+def cmd_quick(args) -> int:
+    """Shortcut entry for uiu quick."""
+    setattr(args, "action", "quick")
+    return cmd_macro(args)
 
 
 # ---------- daemon ----------

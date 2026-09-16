@@ -1,0 +1,20 @@
+{
+  "name": "uiu-agent",
+  "version": "0.1.5",
+  "description": "Minimal personal-IP agent — installs its own embedded Python runtime, no Python needed",
+  "bin": {
+    "uiu": "bin/uiu.js",
+    "uiu-agent": "bin/uiu.js"
+  },
+  "scripts": {
+    "postinstall": "node bin/install.js"
+  },
+  "keywords": ["agent", "ai", "automation", "desktop", "macro", "ocr"],
+  "license": "MIT",
+  "engines": {
+    "node": ">=16"
+  },
+  "files": [
+    "bin/"
+  ]
+}

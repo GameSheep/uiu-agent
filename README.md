@@ -570,6 +570,19 @@ uiu sessions search <关键词>   # 跨会话关键词检索（免费秒回）
 uiu sessions remove <名>
 ```
 
+### `sessions`
+
+```bash
+uiu sessions list                              # 含每个会话的大小与总量
+uiu sessions usage                             # 数量 / 占用 / 最大的几个
+uiu sessions prune --keep 50 --yes             # 只留最新 50 个（裁剪进回收站，可 uiu trash 恢复）
+uiu sessions prune --days 30 --dry-run         # 先看会删哪些（30 天前的）
+uiu sessions show <名> · search <关键词> · remove <名>
+```
+
+保留策略写在 `config.yaml`：`sessions_keep`（默认 200）、`sessions_max_age_days`、
+`sessions_auto_prune`（**默认 false**：daemon 只在超限时告警，绝不擅自删你的会话）。
+
 ### `doctor`
 
 自检 + 自动修复。可选能力栈缺失（浏览器 / 桌面 UIA / 语音 / RAG）以 **info** 列出并给出安装命令，

@@ -92,6 +92,27 @@ def run_daemon(workspace: Path, interval: int = 60, stop_event=None) -> None:
     setup_logging(ws)
     log = get_logger("daemon")
     log.info("started (PID %s, ws %s, interval %ss)", pid, ws, interval)
+    try:                                  # 会话生命周期：只告警，除非用户显式打开自动裁剪
+        from .config import load_config
+        from .sessions import prune_sessions, sessions_usage
+        _cfg = load_config(ws)
+        keep = int(getattr(_cfg, "sessions_keep", 200) or 0)
+        usage = sessions_usage(ws)
+        if keep and usage["count"] > keep:
+            if getattr(_cfg, "sessions_auto_prune", False):
+                result = prune_sessions(
+                    ws, keep=keep,
+                    max_age_days=float(getattr(_cfg, "sessions_max_age_days", 0.0) or 0.0),
+                    protect=("default",))
+                log.info("session auto-prune: %d removed (freed %d bytes)",
+                         len(result["removed"]), result["freed"])
+            else:
+                log.warning("会话数 %d 超过上限 %d（%.1f MB）；"
+                            "运行 uiu sessions prune，或设 sessions_auto_prune: true 让它自动裁",
+                            usage["count"], keep, usage["bytes"] / 1024 / 1024)
+    except Exception as exc:
+        log.exception("session lifecycle check failed: %s", exc)
+
     try:                                  # 回收站按天数清理（删除是可撤销的，但也别无限涨）
         from .trash import purge as _purge_trash
         dropped = _purge_trash(ws)

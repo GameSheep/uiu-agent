@@ -1178,7 +1178,62 @@ def cmd_sessions(args) -> int:
         import time as _t
         for s in items:
             ts = _t.strftime("%m-%d %H:%M", _t.localtime(s["updated"]))
-            print(f"  {s['id']:<24} {s['turns']:>3} 轮  {ts}")
+            kb = s.get("bytes", 0) / 1024
+            print(f"  {s['id']:<24} {s['turns']:>3} 轮  {kb:>7.1f} KB  {ts}")
+        usage = _sessions.sessions_usage(ws)
+        over = _session_cap(ws)
+        note = f"（上限 {over}，建议 uiu sessions prune）" if over and usage["count"] > over else ""
+        print(f"\n  共 {usage['count']} 个 · {usage['bytes'] / 1024 / 1024:.1f} MB {note}")
+        return 0
+
+    if action == "usage":
+        usage = _sessions.sessions_usage(ws)
+        if not usage["count"]:
+            print("(还没有已保存的会话)")
+            return 0
+        print(f"  会话数: {usage['count']}")
+        print(f"  占用:   {usage['bytes'] / 1024 / 1024:.2f} MB")
+        print(f"  最新:   {usage['newest']}")
+        print(f"  最旧:   {usage['oldest']}")
+        print("  最大的几个：")
+        for row in usage["largest"]:
+            print(f"    {row['id']:<24} {row.get('bytes', 0) / 1024:>8.1f} KB")
+        over = _session_cap(ws)
+        if over and usage["count"] > over:
+            print(f"\n  已超过上限 {over}：uiu sessions prune --keep {over}（会进回收站，可恢复）")
+        return 0
+
+    if action == "prune":
+        keep = getattr(args, "keep", None)
+        days = getattr(args, "days", None)
+        usage = _sessions.sessions_usage(ws)
+        # 默认值来自配置，命令行优先
+        if keep is None:
+            keep = _session_cap(ws)
+        if days is None:
+            days = _session_age_days(ws)
+        plan = _sessions.prune_sessions(ws, keep=int(keep or 0),
+                                        max_age_days=float(days or 0),
+                                        protect=("default",),
+                                        dry_run=True)
+        if not plan["removed"]:
+            print(f"(无需裁剪：共 {usage['count']} 个会话，keep={keep}, days={days})")
+            return 0
+        print(f"将裁剪 {len(plan['removed'])} 个会话（释放约 {plan['freed'] / 1024:.1f} KB）：")
+        for sid in plan["removed"][:20]:
+            print(f"  - {sid}")
+        if len(plan["removed"]) > 20:
+            print(f"  … 其余 {len(plan['removed']) - 20} 个")
+        if getattr(args, "dry_run", False):
+            print("\n(dry-run：没有真的删除)")
+            return 0
+        if not getattr(args, "yes", False) and not _confirm("确认裁剪？", default_yes=False):
+            print("已取消")
+            return 0
+        result = _sessions.prune_sessions(ws, keep=int(keep or 0),
+                                          max_age_days=float(days or 0),
+                                          protect=("default",))
+        _print_ok(f"已裁剪 {len(result['removed'])} 个会话（进回收站，uiu trash 可恢复）")
         return 0
 
     if action == "show":
@@ -1509,6 +1564,21 @@ def cmd_audit(args) -> int:
         print(f"  {when}  {kind:<12} {tool:<18} {status:<10}{timing}  {detail}")
     print(f"\n共 {len(events)} 条 · {audit_path(ws)}")
     return 0
+
+
+def _session_cap(ws) -> int:
+    """会话数量上限（配置里 sessions_keep；<=0 表示不限）。"""
+    try:
+        return int(getattr(load_config(ws), "sessions_keep", 200) or 0)
+    except Exception:
+        return 200
+
+
+def _session_age_days(ws) -> float:
+    try:
+        return float(getattr(load_config(ws), "sessions_max_age_days", 0.0) or 0.0)
+    except Exception:
+        return 0.0
 
 
 # ---------- trash（回收站，审计 §4.1） ----------

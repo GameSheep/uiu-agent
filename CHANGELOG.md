@@ -12,6 +12,11 @@
 - **网关默认鉴权**：默认只绑 `127.0.0.1`；无 `UIU_GATEWAY_TOKEN` 时拒绝非本机监听（需显式
   `UIU_GATEWAY_INSECURE=1` 才放行并告警）；新增 `uiu serve --host`；通用 webhook 的 secret 改为必填；
   `uiu doctor` 新增可自动修复的 `channel/gateway-no-token`。
+- **会话生命周期**：`uiu sessions usage`（数量/占用/最大几个）与 `uiu sessions prune`
+  （按数量或天数裁剪，**先进回收站可恢复**，支持 `--dry-run`）；TUI 会话切换器显示占用；
+  配置项 `sessions_keep` / `sessions_max_age_days` / `sessions_auto_prune`（**默认关**，
+  daemon 只告警不擅自删）；doctor 增 `sessions/over-cap` 提示。
+  顺带修：`list_sessions` 改为按语义时间排序（原来按文件 mtime，备份/恢复后会乱序）。
 - **doctor 依赖体检**：`uiu doctor` 会列出可选能力栈缺失（browser / desktop-uia / voice-tts /
   voice-stt / rag），给出可直接复制的安装命令；**`--fix --install-deps` 才会真的执行安装**
   （默认 `--fix` 不动 pip：playwright/chromadb 这类动辄上百 MB，不该被顺手装上）；

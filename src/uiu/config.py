@@ -111,6 +111,10 @@ class AppConfig:
     channels: list[ChannelConfig] = field(default_factory=list)
     mcp_servers: list[dict[str, Any]] = field(default_factory=list)
     tui: dict[str, Any] = field(default_factory=dict)   # UI 偏好：theme 等
+    # 会话生命周期（审计 §3.5）：只提示不擅自删除；要自动裁剪必须显式打开
+    sessions_keep: int = 200                  # 超过这个数量就提示（<=0 表示不限制）
+    sessions_max_age_days: float = 0.0        # >0 时表示超过这么多天的会话算过期
+    sessions_auto_prune: bool = False         # 默认关：daemon 只告警，不替用户删
 
     def to_dict(self) -> dict:
         return {
@@ -119,6 +123,9 @@ class AppConfig:
             "channels": [asdict(c) for c in self.channels],
             "mcp_servers": self.mcp_servers,
             "tui": self.tui,
+            "sessions_keep": self.sessions_keep,
+            "sessions_max_age_days": self.sessions_max_age_days,
+            "sessions_auto_prune": self.sessions_auto_prune,
         }
 
     @classmethod
@@ -141,6 +148,10 @@ class AppConfig:
             channels=channels,
             mcp_servers=mcp_servers,
             tui=tui,
+            # 老配置没有这些字段 → 用默认值（新增字段必须向后兼容）
+            sessions_keep=int(d.get("sessions_keep", 200) or 0),
+            sessions_max_age_days=float(d.get("sessions_max_age_days", 0.0) or 0.0),
+            sessions_auto_prune=bool(d.get("sessions_auto_prune", False)),
         )
 
     def channel(self, name: str) -> ChannelConfig | None:

@@ -192,8 +192,17 @@ def _build_parser() -> argparse.ArgumentParser:
     pse_search = pse_sub.add_parser("search", help="keyword search across saved sessions")
     pse_search.add_argument("query")
     pse_search.add_argument("--limit", type=int, default=5)
-    pse_rm = pse_sub.add_parser("remove", help="delete a session")
+    pse_rm = pse_sub.add_parser("remove", help="delete a session (moves to trash)")
     pse_rm.add_argument("name")
+    pse_sub.add_parser("usage", help="session count / disk usage / largest sessions")
+    pse_prune = pse_sub.add_parser("prune", help="drop old sessions (goes to trash, reversible)")
+    pse_prune.add_argument("--keep", type=int, default=None,
+                           help="keep the newest N (default: config sessions_keep)")
+    pse_prune.add_argument("--days", type=float, default=None,
+                           help="also treat sessions older than N days as stale "
+                                "(default: config sessions_max_age_days)")
+    pse_prune.add_argument("--dry-run", action="store_true", help="show what would go")
+    pse_prune.add_argument("--yes", action="store_true", help="skip the confirmation prompt")
 
     # macro
     pmc = sub.add_parser("macro", help="record/play keyboard-mouse macros (keyboard-macro style)")

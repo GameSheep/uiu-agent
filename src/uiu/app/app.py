@@ -555,8 +555,30 @@ class SessionSwitcher(ModalScreen[str]):
         with Vertical(id="session-box"):
             yield Static(self._title(), classes="modal-title")
             yield ListView(id="session-list")
-            yield Static("↑↓ 选择  " + glyph("sep") + "  Enter 载入  " + glyph("sep")
-                         + "  d 删除  " + glyph("sep") + "  Esc 关闭", classes="modal-foot")
+            yield Static(self._foot(), id="session-foot", classes="modal-foot")
+
+    def _usage(self) -> dict:
+        try:
+            from .. import sessions as _sessions
+            return _sessions.sessions_usage(self.workspace)
+        except Exception:
+            return {"count": 0, "bytes": 0}
+
+    def _foot(self) -> Text:
+        """底部除了按键提示，也顺带报占用（审计 §3.5：让用户看得见空间）。"""
+        pal = palette(self.app)
+        usage = self._usage()
+        t = Text()
+        t.append("↑↓ 选择", style="dim")
+        t.append("  " + glyph("sep") + "  ", style="dim")
+        t.append("Enter 载入", style="dim")
+        t.append("  " + glyph("sep") + "  ", style="dim")
+        t.append("d 删除", style="dim")
+        t.append("  " + glyph("sep") + "  ", style="dim")
+        t.append("Esc 关闭", style="dim")
+        mb = usage.get("bytes", 0) / 1024 / 1024
+        t.append(f"   ·   {usage.get('count', 0)} 个 / {mb:.1f} MB", style=f"dim {pal.secondary}")
+        return t
 
     def _title(self) -> Text:
         pal = palette(self.app)
@@ -617,7 +639,9 @@ class SessionSwitcher(ModalScreen[str]):
             return
         for i, s in enumerate(self._sessions):
             mark = glyph("dot") if s["id"] == self.current else " "
-            desc = Label(f"{mark} {s['id']}   [dim]{s.get('turns', 0)} 轮[/dim]")
+            kb = s.get("bytes", 0) / 1024
+            size = f" · {kb:.0f} KB" if s.get("bytes") else ""
+            desc = Label(f"{mark} {s['id']}   [dim]{s.get('turns', 0)} 轮{size}[/dim]")
             await lv.append(ListItem(desc))
         idx = next((i for i, s in enumerate(self._sessions)
                     if s["id"] == self.current), 0)

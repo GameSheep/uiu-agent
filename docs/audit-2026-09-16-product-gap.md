@@ -40,6 +40,7 @@
 | P0-4 依赖声明修正 | ✅ 完成 | playwright→`[browser]`；uiautomation→`[desktop]`；补齐 numpy/opencv-python（核心）、websockets（browser）、scipy/sounddevice/SpeechRecognition/openai-whisper（voice）；新增扫描测试保证「src 里每个第三方 import 都被声明」；8 个原本在门外的测试模块现在可收集（2 处真实修复 + 显式 skip） |
 | P0-5 错误契约 | ✅ 完成 | `uiu config --list` 遇到坏 config.yaml 现在 stderr + rc=2；`test_broken_config_never_reports_success` 同时锁定 show/config/doctor 三者 |
 | P0-6 日志体系 | ✅ 完成 | 新增 `src/uiu/log.py`（分级 + `RotatingFileHandler` 5MB×3 + workspace 落盘 + 失败降级）；daemon 手写 append 改为结构化日志；gateway 启动/绑定/鉴权/agent 异常/发送失败/定时任务全部落盘；cron 任务开始-结束-异常落盘；损坏文件备份与 config 解析失败落盘；TUI 启动接上日志。测试：`tests/test_logging.py`（9 个，含轮转、级别、密钥不入日志、日志目录不可用时不崩） |
+| P2-17 会话生命周期与空间管理 | ✅ 完成 | `sessions_usage`/`prune_sessions`（裁剪进回收站、保守规则、dry-run）；CLI `sessions usage/prune`；TUI 切换器显示占用；配置 `sessions_keep/sessions_max_age_days/sessions_auto_prune`（默认只告警）；doctor `sessions/over-cap`；并把 `list_sessions` 改为按语义时间排序。测试：`tests/test_sessions_lifecycle.py`（15） |
 | P2-15 doctor 覆盖依赖检查 | ✅ 完成 | `_chk_optional_deps` 表驱动体检 5 个可选栈（browser / desktop-uia / voice-tts / voice-stt / rag），给出**可执行的安装命令**；装包需显式 `--fix --install-deps`（默认 `--fix` 不碰 pip——可选栈动辄上百 MB，不该被顺手装上）；缺 `textual`（核心）报 error；UIA 检查只在 Windows 上触发；可选栈缺失为 **info 级**、不影响退出码。测试：`tests/test_doctor_deps.py`（11） |
 | P2-13 破坏性操作可撤销 | ✅ 完成 | `trash.py`（文件类/记录类两种条目、拒绝覆盖、按天清理）+ `uiu trash`；会话/宏/渠道/定时任务删除全部软删除；TUI `Ctrl+Z` 撤销。测试：`tests/test_trash.py`（12） |
 | P1-12 真 LLM 最小 E2E + 平台支持矩阵 | ✅ 完成 | `tests/test_e2e_live_llm.py`（`live` 标记，默认跳过，验证「模型→工具→守卫→审计」整条链路，已证明非静默跳过）；`docs/platform-support.md`（能力矩阵 + 30 个 Windows 专有模块**扫描生成** + `--check`）；doctor 增 `platform/degraded`。测试：`tests/test_platform_support.py`（6） |
@@ -158,6 +159,16 @@
 ### 3.5 会话无生命周期管理（待验证） — 次要
 **现状**：`workspace/sessions/*.json` 只增不减；TUI 支持单个删除。
 **建议**：加保留策略（按数量/天数）与「占用空间」展示，删除前提示。
+
+**已修复（round 13）**：`sessions.sessions_usage()`（数量/总字节/最大的几个/最新最旧）；
+`sessions.prune_sessions(keep, max_age_days, protect, dry_run)`——裁剪**进回收站**（可 restore），
+同时给 keep 与 days 时按「既超量又超龄」的保守规则；CLI `uiu sessions usage` / `uiu sessions prune
+[--keep N] [--days N] [--dry-run] [--yes]`（先打印计划再确认）；TUI 会话切换器底部与每行显示占用；
+配置 `sessions_keep`（默认 200）/ `sessions_max_age_days` / `sessions_auto_prune`（**默认关**：
+daemon 只告警不擅自删）；doctor 增 `sessions/over-cap`（info）。
+
+顺带修一个真问题：`list_sessions` 原来按**文件 mtime** 排序，备份/恢复或 touch 会让「最新 N 个」
+变成随机结果（直接影响 prune/keep），现在按 JSON 里的语义时间 `updated` 排序。
 
 ---
 

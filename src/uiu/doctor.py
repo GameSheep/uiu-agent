@@ -274,6 +274,24 @@ def _chk_optional_deps(root: Path) -> list[Finding]:
     return out
 
 
+def _chk_sessions(root: Path) -> list[Finding]:
+    """会话占用（审计 §3.5）：只提示，不擅自删。"""
+    try:
+        from .sessions import sessions_usage
+        usage = sessions_usage(root)
+        keep = int(getattr(C.load_config(root), "sessions_keep", 200) or 0)
+    except Exception:
+        return []
+    if not keep or usage.get("count", 0) <= keep:
+        return []
+    mb = usage.get("bytes", 0) / 1024 / 1024
+    return [Finding(
+        "sessions/over-cap", "info",
+        f"已保存 {usage['count']} 个会话（上限 {keep}），占用 {mb:.1f} MB",
+        fix_hint="uiu sessions prune --keep %d（会进回收站，可 uiu trash 恢复）" % keep,
+        path=str(root / "sessions"), can_fix=False)]
+
+
 def _chk_platform(root: Path) -> list[Finding]:
     """非 Windows 上明确列出不可用能力（审计 §7.4）。"""
     import sys as _sys
@@ -332,7 +350,7 @@ def _env_file_value(root: Path, key: str) -> str:
 def _all_checks(root: Path) -> list[Finding]:
     out: list[Finding] = []
     for fn in (_chk_env, _chk_platform, _chk_workspace, _chk_config_yaml, _chk_model,
-               _chk_env_file, _chk_channels, _chk_optional_deps):
+               _chk_env_file, _chk_channels, _chk_optional_deps, _chk_sessions):
         try:
             out.extend(fn(root) or [])
         except Exception:

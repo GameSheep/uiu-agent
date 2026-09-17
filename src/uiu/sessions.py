@@ -52,9 +52,15 @@ def load_session(workspace: Path, sid: str) -> list[dict] | None:
 
 
 def list_sessions(workspace: Path) -> list[dict]:
+    """按语义时间（JSON 里的 updated）倒序列出会话。
+
+    不能用文件 mtime：备份/恢复、手工 touch、杀软扫描都会改 mtime，
+    会让「最新的 N 个」变成随机结果（prune/keep 直接受影响）。
+    老会话没有 updated 字段时才退回 mtime。
+    """
     out = []
     d = sessions_dir(workspace)
-    for p in sorted(d.glob("*.json"), key=lambda x: x.stat().st_mtime, reverse=True):
+    for p in d.glob("*.json"):
         data = load_json_tolerant(p, None)
         if data is None:
             continue
@@ -62,9 +68,69 @@ def list_sessions(workspace: Path) -> list[dict]:
         if not isinstance(data, dict):
             continue
         msgs = data.get("messages", [])
-        out.append({"id": p.stem, "updated": data.get("updated", 0),
+        try:
+            stat = p.stat()
+        except OSError:
+            continue
+        updated = data.get("updated", 0) or stat.st_mtime
+        out.append({"id": p.stem, "updated": updated, "bytes": stat.st_size,
+                    "mtime": stat.st_mtime,
                     "turns": sum(1 for m in msgs if m.get("role") == "user")})
+    out.sort(key=lambda r: r["updated"], reverse=True)
     return out
+
+
+def sessions_usage(workspace: Path) -> dict:
+    """占用概览：会话数、总字节、最旧/最新（给 /sessions、TUI 与 doctor 用）。"""
+    rows = list_sessions(workspace)          # 已按 updated/mtime 倒序
+    return {
+        "count": len(rows),
+        "bytes": sum(r.get("bytes", 0) for r in rows),
+        "largest": sorted(rows, key=lambda r: r.get("bytes", 0), reverse=True)[:5],
+        "newest": rows[0]["id"] if rows else "",
+        "oldest": rows[-1]["id"] if rows else "",
+        "sessions": rows,
+    }
+
+
+def prune_sessions(workspace: Path, *, keep: int = 200, max_age_days: float = 0.0,
+                   protect: tuple[str, ...] = (), dry_run: bool = False) -> dict:
+    """按数量/天数裁剪旧会话。
+
+    删除是**可撤销**的：走回收站（uiu trash 可恢复）。
+    规则：同时满足「不在最新 keep 个之内」且「超过 max_age_days 天」才会被裁；
+    只给其中一个条件时按该条件裁剪；protect 里的 id 永不裁。
+    """
+    usage = sessions_usage(workspace)
+    rows = usage["sessions"]
+    protected = {str(x) for x in protect}
+    cutoff = (time.time() - float(max_age_days) * 86400
+              if max_age_days and max_age_days > 0 else None)
+    use_keep = bool(keep and keep > 0)
+
+    victims: list[dict] = []
+    for idx, row in enumerate(rows):
+        if row["id"] in protected:
+            continue
+        too_many = use_keep and idx >= keep
+        too_old = cutoff is not None and row.get("updated", 0) < cutoff
+        if use_keep and cutoff is not None:
+            if too_many and too_old:
+                victims.append(row)
+        elif too_many or too_old:
+            victims.append(row)
+
+    removed: list[str] = []
+    if not dry_run:
+        for row in victims:
+            if remove_session_ex(workspace, row["id"]) is not None:
+                removed.append(row["id"])
+    else:
+        removed = [r["id"] for r in victims]
+
+    return {"removed": removed, "kept": len(rows) - len(victims),
+            "freed": sum(r.get("bytes", 0) for r in victims),
+            "dry_run": bool(dry_run)}
 
 
 def recent_sessions(workspace: Path, limit: int = 8) -> list[dict]:

@@ -5,7 +5,7 @@
 ## 它能做什么
 
 - 跟你多轮对话，记住上下文（同一会话内；`/save` 可跨会话 resume）。
-- 自动调用 68 个内置工具（文件/shell/后台进程/屏幕 OCR/桌面控制/宏录制回放/系统/微信/输入法/子 agent 派发/联网搜索/浏览器/MCP 动态工具…）。
+- 自动调用 123 个内置工具（文件/shell/后台进程/屏幕 OCR/桌面控制/宏录制回放/系统/微信/输入法/子 agent 派发/联网搜索/浏览器/MCP 动态工具…），完整清单见 [docs/tools.md](docs/tools.md)。
 - skill 渐进披露：system prompt 只带索引，用 `skills_list` / `skill_view` 按需取全文。
 - `cron` 定时任务：到点自动跑 agent 并落盘（`uiu serve` 内每 60s tick）。
 - 不确定就反问：`clarify` 工具阻塞等你回答再干活。
@@ -15,6 +15,17 @@
 - **屏幕自动化（OCR，免视觉模型）**：说"点提交按钮"它就能点。
 - **完整 CLI**：配置模型（34 provider）、加 skill、加 channel（Telegram/飞书/企微/钉钉/Discord/Slack）、更新代码。
 - **可发布到 PyPI**：`uiu publish` 一行构建 + 上传，全世界 `pip install uiu`。
+
+## 文档索引
+
+| 文档 | 内容 |
+|---|---|
+| [docs/architecture.md](docs/architecture.md) | 分层、进程模型、一次对话的数据流、状态文件与写入约定、安全模型 |
+| [docs/tools.md](docs/tools.md) | **123 个内置工具**参考（自动生成） |
+| [docs/gateway-api.md](docs/gateway-api.md) | 网关端点、鉴权矩阵、各平台回调、返回约定 |
+| [docs/troubleshooting.md](docs/troubleshooting.md) | 按症状排查（启动/密钥/权限/数据/环境） |
+| [docs/tui-tour.md](docs/tui-tour.md) | 界面导览（11 个界面配图） |
+| [docs/audit-2026-09-16-product-gap.md](docs/audit-2026-09-16-product-gap.md) | 产品级差距审计与实施进度 |
 
 ## 屏幕自动化（OCR 点击，不需要视觉模型）
 
@@ -102,7 +113,11 @@ CLI：`uiu macro record 填表 --desc "登录后填表"` / `uiu macro play 填�
 
 宏文件可直接编辑或由 AI 生成（步骤类型：click/key/type/wait/scroll/hotkey，各带 `delay_before` 间隔）。
 
-## 工具全景（68 个，19 组）
+## 工具全景
+
+> **123 个内置工具**的完整参考（名称 / 说明 / 参数 / 是否需要确认）见
+> **[docs/tools.md](docs/tools.md)** —— 该文件由 `scripts/gen_tools_doc.py` 从注册表生成，
+> CI 会校验它与代码一致，所以这里的数字不会过期。
 
 | 类 | 工具 |
 |---|---|
@@ -399,7 +414,7 @@ C:\Users\you\.uiu\workspace      123 工具 · 0 技能 · v1.0.0 · default
 ╭──────────────────────────────────────────────────────────────────╮
 │ ◆ uiu  小刃                              ·  已就绪  ·  123 工具  │
 │ 你的个人 IP agent —— 常驻在这台电脑上，替你动手。                 │
-│ ⚙ 68 工具  ◉ 屏幕 OCR  ⌘ 桌面控制  ⏱ 宏 / 定时  ✉ 消息渠道       │
+│ ⚙ 123 工具  ◉ 屏幕 OCR  ⌘ 桌面控制  ⏱ 宏 / 定时  ✉ 消息渠道      │
 ╰──────────────────────────────────────────────────────────────────╯
 
 从这些开始

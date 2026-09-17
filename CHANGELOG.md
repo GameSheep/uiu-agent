@@ -12,6 +12,10 @@
 - **网关默认鉴权**：默认只绑 `127.0.0.1`；无 `UIU_GATEWAY_TOKEN` 时拒绝非本机监听（需显式
   `UIU_GATEWAY_INSECURE=1` 才放行并告警）；新增 `uiu serve --host`；通用 webhook 的 secret 改为必填；
   `uiu doctor` 新增可自动修复的 `channel/gateway-no-token`。
+- **文档**：新增 `docs/architecture.md`（分层/进程模型/数据流/写入约定/安全模型）、
+  `docs/tools.md`（由 `scripts/gen_tools_doc.py` 从注册表生成，CI 校验新鲜度）、
+  `docs/gateway-api.md`（端点/鉴权矩阵/回调/返回约定）、`docs/troubleshooting.md`（按症状排查）；
+  README 增加文档索引，并修掉「68 个工具」这类会腐烂的假数字（现有测试盯着）。
 - **安全策略收紧**：路径改为三态决策（workspace/cwd/临时目录放行、越界需确认、凭据目录与系统目录拒绝）；
   shell 命令按语义分类（只读放行，写/网络/进程/系统/包管理/解释器/未知命令一律需确认，破坏性命令拒绝）；
   确认框显示完整命令与 cwd。

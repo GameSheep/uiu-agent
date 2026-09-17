@@ -40,6 +40,7 @@
 | P0-4 依赖声明修正 | ✅ 完成 | playwright→`[browser]`；uiautomation→`[desktop]`；补齐 numpy/opencv-python（核心）、websockets（browser）、scipy/sounddevice/SpeechRecognition/openai-whisper（voice）；新增扫描测试保证「src 里每个第三方 import 都被声明」；8 个原本在门外的测试模块现在可收集（2 处真实修复 + 显式 skip） |
 | P0-5 错误契约 | ✅ 完成 | `uiu config --list` 遇到坏 config.yaml 现在 stderr + rc=2；`test_broken_config_never_reports_success` 同时锁定 show/config/doctor 三者 |
 | P0-6 日志体系 | ✅ 完成 | 新增 `src/uiu/log.py`（分级 + `RotatingFileHandler` 5MB×3 + workspace 落盘 + 失败降级）；daemon 手写 append 改为结构化日志；gateway 启动/绑定/鉴权/agent 异常/发送失败/定时任务全部落盘；cron 任务开始-结束-异常落盘；损坏文件备份与 config 解析失败落盘；TUI 启动接上日志。测试：`tests/test_logging.py`（9 个，含轮转、级别、密钥不入日志、日志目录不可用时不崩） |
+| P1-10 架构/工具/网关 API 文档 | ✅ 完成 | 新增 `docs/architecture.md`（分层/进程模型/数据流/状态与写入约定/安全模型）、`docs/tools.md`（**生成物**，123 工具按模块分组 + 参数 + 需确认标记 + `--check`）、`docs/gateway-api.md`（端点表/鉴权矩阵/回调样例/返回约定）、`docs/troubleshooting.md`；README 加文档索引并修掉三处假数字。测试：`tests/test_docs_sync.py`（12） |
 | P1-8 路径白名单 + shell 语义确认 + 审计日志 | ✅ 完成 | `classify_path` 三态路径决策（白名单/越界确认/凭据拒绝）；`classify_command` 语义分级（只读放行，写/网络/进程/系统/包管理/解释器/未知一律确认，破坏性拒绝）；确认框显示完整命令+cwd；`audit.py` append-only JSONL（脱敏、滚动）+ `uiu audit`。测试：`tests/test_security_policy.py`（48）。**未做**：本次会话内允许同类（有意保留每次确认） |
 | P1-9 schema 版本 + 迁移 + 备份恢复 | ✅ 完成 | `schema.py`：config/session/jobs 带版本号并读时迁移（jobs 是真实结构变更，迁移在锁内做）；`backup.py` + `uiu backup/restore`：滚动 7 份、恢复前快照可撤销、拒绝 zip-slip、daemon 每日自动备份。测试：`test_schema_migration.py`(11) + `test_backup_restore.py`(11) |
 | P1-7 覆盖率基线 | ✅ 完成 | 实测 53.5%；CI 门禁 `--cov-fail-under=50`；零覆盖模块与最弱 10 个已记录（见 §6.1） |
@@ -300,9 +301,17 @@ source/omit/exclude；CI 增加 `--cov=uiu --cov-report=term-missing --cov-fail-
 **证据**：无 `ARCHITECTURE.md`、无 API 文档；123 个工具**没有一份工具参考**；gateway 的端点/鉴权/各平台回调格式无文档。
 **建议**：①`docs/architecture.md`（模块图 + 数据流 + 进程模型）；②`docs/tools.md`（可由 registry 自动生成，避免再腐烂）；③`docs/gateway-api.md`（端点、鉴权、回调样例、安全默认值）。
 
+**已修复（round 9）**：三份文档全部落地，另补 `docs/troubleshooting.md`（按症状排查）。
+`docs/tools.md` 由 `scripts/gen_tools_doc.py` 从注册表生成（123 个工具、按定义模块分组、标注需确认项），
+`--check` 模式进 CI；README 增加「文档索引」表。
+
 ### 8.3 文档与代码不一致 — 次要
 **证据**：README 写「工具全景（68 个，19 组）」，实测 **123 个**；`cli_smoke.py` 曾钉死「内置工具数 == 68」（本次已修）。
 **建议**：数字类内容一律从代码生成或去掉具体数字；CI 加文档数字校验。
+
+**已修复（round 9）**：README 里三处「68 个工具」改为真实值并指向生成文档；新增
+`tests/test_docs_sync.py`（12 个）——校验 `docs/tools.md` 与注册表一致、覆盖每个工具、
+**README 里任何「N 个内置工具 / ⚙ N 工具」必须等于真实数量**、四份文档存在且被 README 索引。
 
 ### 8.4 缺故障排查手册 — 次要
 **建议**：`docs/troubleshooting.md`（无 key、网关不可达、编码乱码、权限拒绝、依赖缺失各自怎么办）。

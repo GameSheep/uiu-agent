@@ -23,6 +23,10 @@ jobs:
       - name: Unit tests (no LLM / network)
         run: python -m pytest tests/ -q
 
+      # 覆盖率门禁：只保证不低于已记录基线（见审计 §6.1），随轮次抬高
+      - name: Coverage gate (baseline, no regressions)
+        run: python -m pytest tests/ -q --cov=uiu --cov-report=term-missing --cov-fail-under=30
+
       - name: CLI smoke (offline, isolated workspace)
         run: python cli_smoke.py
 

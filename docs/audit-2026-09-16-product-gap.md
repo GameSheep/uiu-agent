@@ -40,6 +40,7 @@
 | P0-4 依赖声明修正 | ✅ 完成 | playwright→`[browser]`；uiautomation→`[desktop]`；补齐 numpy/opencv-python（核心）、websockets（browser）、scipy/sounddevice/SpeechRecognition/openai-whisper（voice）；新增扫描测试保证「src 里每个第三方 import 都被声明」；8 个原本在门外的测试模块现在可收集（2 处真实修复 + 显式 skip） |
 | P0-5 错误契约 | ✅ 完成 | `uiu config --list` 遇到坏 config.yaml 现在 stderr + rc=2；`test_broken_config_never_reports_success` 同时锁定 show/config/doctor 三者 |
 | P0-6 日志体系 | ✅ 完成 | 新增 `src/uiu/log.py`（分级 + `RotatingFileHandler` 5MB×3 + workspace 落盘 + 失败降级）；daemon 手写 append 改为结构化日志；gateway 启动/绑定/鉴权/agent 异常/发送失败/定时任务全部落盘；cron 任务开始-结束-异常落盘；损坏文件备份与 config 解析失败落盘；TUI 启动接上日志。测试：`tests/test_logging.py`（9 个，含轮转、级别、密钥不入日志、日志目录不可用时不崩） |
+| P1-7 覆盖率基线 | ✅ 完成 | 实测 53.5%；CI 门禁 `--cov-fail-under=50`；零覆盖模块与最弱 10 个已记录（见 §6.1） |
 | 版本单一来源 | ✅ 完成 | npm 0.1.5 → 0.1.7；`test_version_is_single_source` 锁定 pyproject/__init__/npm/CHANGELOG |
 
 ### 审计更正（2026-09-17）
@@ -204,6 +205,21 @@
 ### 6.1 有基础、无覆盖率 — 重要
 **证据**：56 个测试文件 / 458 个用例（其中 414 可跑通全绿）；**未安装 coverage/pytest-cov**，`pyproject` 无覆盖率配置，CI 不测覆盖率。
 **建议**：引入覆盖率基线（先记录现状，再对 `src/uiu/*` 设增量门槛），CI 输出报告。
+
+**已修复（round 6）**：`[test]` extra 加 `coverage` + `pytest-cov`；`[tool.coverage.*]` 配好
+source/omit/exclude；CI 增加 `--cov=uiu --cov-report=term-missing --cov-fail-under=50` 门禁。
+
+**实测基线（2026-09-17，本机无法装 coverage，用 stdlib settrace 采集器跑全量套件近似得到）**：
+`src/uiu` 语句覆盖 **8000/14952 = 53.5%**。CI 门槛设为 **50**（留 ~3.5pt 余量只防回退）。
+
+**零覆盖模块（6 个，共 1066 行）**：`browser_connect.py`(381)、`browser_explorer.py`(160)、
+`safe_update.py`(157)、`browser_self_healing.py`(125)、`skill_installer.py`(107)、`browser_compiler.py`(76)。
+
+**覆盖最弱的 10 个（排除上面的 0%）**：`uia_locator`(5.8%)、`askui_tools`(8.2%)、
+`channels_dingtalk`(8.2%)、`voice_tools`(8.7%)、`channels_email`(9.1%)、`channels_discord`(10.9%)、
+`channels_slack`(10.9%)、`ime_tools`(13.6%)、`commands.py`(15.5%, 988 行的上帝模块)、
+`email_gui`(16.5%)。→ 下一轮补齐顺序：先 `safe_update`/`skill_installer`（纯逻辑、易测），
+再 `commands.py`（拆分时顺手补），浏览器栈需要 `[browser]` 依赖才能进 CI。
 
 ### 6.2 8 个模块 44 个用例在验证面之外 — 重要
 **证据**：

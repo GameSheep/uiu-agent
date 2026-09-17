@@ -26,6 +26,9 @@ See @README.md for project overview and @package.json for available npm/pnpm com
 - 跑测试：`.venv\Scripts\python.exe -m pytest tests -q`（`tests/conftest.py` 会自动处理本机
   `mkdir(mode=0o700)` 生成拒绝访问目录的问题，无需自定义 runner）。
 - 冒烟：`.venv\Scripts\python.exe cli_smoke.py`（自带临时目录回退）。
+- 覆盖率（需先 `pip install -e ".[test]"`，CI 会跑并卡门槛）：
+  `.venv\Scripts\python.exe -m pytest tests -q --cov=uiu --cov-report=term-missing --cov-fail-under=50`
+  基线 50（2026-09-17 实测 53.5%）。只保证不回退；新增代码请自带测试，阈值随轮次抬高。
 - 界面预览：`.venv\Scripts\python.exe scripts/tui_preview.py`（11 个状态 → `docs/preview/`）；
   界面导览见 `docs/tui-tour.md`。
 

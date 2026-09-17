@@ -69,6 +69,9 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("-V", "--version", action="store_true", help="print version and exit")
     p.add_argument("--no-tui", action="store_true", help="use the classic REPL instead of the full-screen app")
     p.add_argument("--skip-setup", action="store_true", help="skip first-run welcome/model wizard (advanced)")
+    p.add_argument("--json", action="store_true", default=argparse.SUPPRESS,
+                   help="machine-readable output: exactly one JSON document on stdout "
+                        "(progress/hints go to stderr)")
     sub = p.add_subparsers(dest="cmd", metavar="<command>")
 
     sub.add_parser("init", help="bootstrap workspace + .env")
@@ -203,6 +206,9 @@ def _build_parser() -> argparse.ArgumentParser:
                                 "(default: config sessions_max_age_days)")
     pse_prune.add_argument("--dry-run", action="store_true", help="show what would go")
     pse_prune.add_argument("--yes", action="store_true", help="skip the confirmation prompt")
+    for _sp in (pse, *pse_sub.choices.values()):
+        _sp.add_argument("--json", action="store_true", default=argparse.SUPPRESS,
+                         help="emit one JSON document")
 
     # macro
     pmc = sub.add_parser("macro", help="record/play keyboard-mouse macros (keyboard-macro style)")
@@ -232,6 +238,8 @@ def _build_parser() -> argparse.ArgumentParser:
     pdoc.add_argument("--yes", action="store_true", help="with --fix: apply all without prompting")
     pdoc.add_argument("--install-deps", action="store_true",
                       help="with --fix: really pip install missing optional extras (off by default)")
+    pdoc.add_argument("--json", action="store_true", default=argparse.SUPPRESS,
+                      help="emit one JSON document (findings + exit code)")
 
     # trash（回收站，审计 §4.1）
     ptr = sub.add_parser("trash", help="recycle bin: list / restore / purge deleted items")
@@ -239,17 +247,22 @@ def _build_parser() -> argparse.ArgumentParser:
     ptr.add_argument("--restore", default="", help="restore an entry by id")
     ptr.add_argument("--purge", action="store_true", help="delete entries older than --days")
     ptr.add_argument("--days", type=float, default=7.0, help="purge threshold in days (default 7)")
+    ptr.add_argument("--json", action="store_true", default=argparse.SUPPRESS,
+                     help="emit one JSON document")
 
     # audit（工具执行审计日志，审计 §5.6）
     paud = sub.add_parser("audit", help="show the tool-execution audit log")
     paud.add_argument("--tail", type=int, default=30, help="show the newest N events (default 30)")
-    paud.add_argument("--json", action="store_true", help="print raw JSONL")
+    paud.add_argument("--json", action="store_true", default=argparse.SUPPRESS,
+                      help="emit one JSON document (data.events)")
 
     # backup / restore（用户数据兜底，审计 §3.4）
     pbk = sub.add_parser("backup", help="back up the workspace (config/sessions/memory/skills)")
     pbk.add_argument("--to", default="", help="target dir (default: <workspace>/backups)")
     pbk.add_argument("--keep", type=int, default=7, help="keep the newest N backups (default 7)")
     pbk.add_argument("--list", action="store_true", help="list existing backups and exit")
+    pbk.add_argument("--json", action="store_true", default=argparse.SUPPRESS,
+                     help="emit one JSON document")
     prs = sub.add_parser("restore", help="restore a workspace from a backup zip")
     prs.add_argument("archive", help="path to uiu-backup-*.zip")
     prs.add_argument("--yes", action="store_true", help="skip the confirmation prompt")
@@ -525,6 +538,8 @@ def main(argv: list[str] | None = None) -> int:
         return _run_tui(args, parser)
 
     try:
+        from . import cli_io
+        cli_io.set_json_mode(bool(getattr(args, "json", False)))
         return _dispatch(args, parser)
     except RuntimeError as e:
         # 配置损坏等可预期错误：友好提示而非堆栈

@@ -786,16 +786,17 @@ def cmd_update(args) -> int:
                 cur = _md.version("uiu")
             except Exception:
                 cur = "?"
-            print(f"· 当前 uiu {cur}，从 PyPI 升级…")
+            from .cli_io import step
             idx = os.environ.get("UIU_PIP_INDEX", "")
             cmd = [sys.executable, "-m", "pip", "install", "--upgrade", "--quiet",
                    "--disable-pip-version-check", "uiu"]
             if idx:
                 cmd += ["-i", idx]
-            r = subprocess.run(cmd, check=False)
-            if r.returncode != 0:
-                _print_err("pip 升级失败（网络/镜像问题？）")
-                return 1
+            with step(f"从 PyPI 升级 uiu（当前 {cur}）"):
+                r = subprocess.run(cmd, check=False)
+                if r.returncode != 0:
+                    _print_err("pip 升级失败（网络/镜像问题？）")
+                    return 1
             try:
                 new = _md.version("uiu")
             except Exception:
@@ -1005,19 +1006,22 @@ def cmd_publish(args) -> int:
         print("  create one at https://pypi.org/manage/account/token/")
         return 2
 
-    # 1. build
-    print("· building sdist + wheel…")
-    rc = subprocess.run(
-        [sys.executable, "-m", "pip", "install", "--quiet", "build", "twine"],
-        check=False,
-    )
-    if rc.returncode != 0:
-        _print_err("pip install build/twine failed")
-        return 1
-    rc = subprocess.run([sys.executable, "-m", "build", "--sdist", "--wheel"], check=False)
-    if rc.returncode != 0:
-        _print_err("build failed — fix errors above, then retry")
-        return 1
+    # 1. build（慢步骤给进度与耗时，脚本模式下进度走 stderr）
+    from .cli_io import step
+
+    with step("安装构建工具 build/twine"):
+        rc = subprocess.run(
+            [sys.executable, "-m", "pip", "install", "--quiet", "build", "twine"],
+            check=False,
+        )
+        if rc.returncode != 0:
+            _print_err("pip install build/twine failed")
+            return 1
+    with step("构建 sdist + wheel"):
+        rc = subprocess.run([sys.executable, "-m", "build", "--sdist", "--wheel"], check=False)
+        if rc.returncode != 0:
+            _print_err("build failed — fix errors above, then retry")
+            return 1
 
     # inspect built artifacts (ensure default workspace/skills packaged)
     dist_dir = Path("dist")
@@ -1171,39 +1175,57 @@ def cmd_sessions(args) -> int:
     action = args.action
 
     if action == "list":
+        from . import cli_io
+
         items = _sessions.list_sessions(ws)
+        usage = _sessions.sessions_usage(ws)
+        over = _session_cap(ws)
+        data = {"count": usage["count"], "bytes": usage["bytes"], "cap": over,
+                "sessions": [{k: s.get(k) for k in ("id", "turns", "bytes", "updated")}
+                             for s in items]}
         if not items:
-            print("(no saved sessions — TUI 里 /save 存一个)")
+            cli_io.result("sessions.list", data=data,
+                          human="(no saved sessions — TUI 里 /save 存一个)")
             return 0
         import time as _t
+        lines = []
         for s in items:
             ts = _t.strftime("%m-%d %H:%M", _t.localtime(s["updated"]))
             kb = s.get("bytes", 0) / 1024
-            print(f"  {s['id']:<24} {s['turns']:>3} 轮  {kb:>7.1f} KB  {ts}")
-        usage = _sessions.sessions_usage(ws)
-        over = _session_cap(ws)
+            lines.append(f"  {s['id']:<24} {s['turns']:>3} 轮  {kb:>7.1f} KB  {ts}")
         note = f"（上限 {over}，建议 uiu sessions prune）" if over and usage["count"] > over else ""
-        print(f"\n  共 {usage['count']} 个 · {usage['bytes'] / 1024 / 1024:.1f} MB {note}")
+        lines.append(f"\n  共 {usage['count']} 个 · {usage['bytes'] / 1024 / 1024:.1f} MB {note}")
+        cli_io.result("sessions.list", data=data, human="\n".join(lines))
         return 0
 
     if action == "usage":
+        from . import cli_io
+
         usage = _sessions.sessions_usage(ws)
-        if not usage["count"]:
-            print("(还没有已保存的会话)")
-            return 0
-        print(f"  会话数: {usage['count']}")
-        print(f"  占用:   {usage['bytes'] / 1024 / 1024:.2f} MB")
-        print(f"  最新:   {usage['newest']}")
-        print(f"  最旧:   {usage['oldest']}")
-        print("  最大的几个：")
-        for row in usage["largest"]:
-            print(f"    {row['id']:<24} {row.get('bytes', 0) / 1024:>8.1f} KB")
         over = _session_cap(ws)
+        data = {"count": usage["count"], "bytes": usage["bytes"], "cap": over,
+                "newest": usage["newest"], "oldest": usage["oldest"],
+                "largest": [{"id": r["id"], "bytes": r.get("bytes", 0)}
+                            for r in usage["largest"]]}
+        if not usage["count"]:
+            cli_io.result("sessions.usage", data=data, human="(还没有已保存的会话)")
+            return 0
+        lines = [f"  会话数: {usage['count']}",
+                 f"  占用:   {usage['bytes'] / 1024 / 1024:.2f} MB",
+                 f"  最新:   {usage['newest']}",
+                 f"  最旧:   {usage['oldest']}",
+                 "  最大的几个："]
+        lines += [f"    {row['id']:<24} {row.get('bytes', 0) / 1024:>8.1f} KB"
+                  for row in usage["largest"]]
         if over and usage["count"] > over:
-            print(f"\n  已超过上限 {over}：uiu sessions prune --keep {over}（会进回收站，可恢复）")
+            lines.append(f"\n  已超过上限 {over}：uiu sessions prune --keep {over}"
+                         "（会进回收站，可恢复）")
+        cli_io.result("sessions.usage", data=data, human="\n".join(lines))
         return 0
 
     if action == "prune":
+        from . import cli_io
+
         keep = getattr(args, "keep", None)
         days = getattr(args, "days", None)
         usage = _sessions.sessions_usage(ws)
@@ -1217,23 +1239,33 @@ def cmd_sessions(args) -> int:
                                         protect=("default",),
                                         dry_run=True)
         if not plan["removed"]:
-            print(f"(无需裁剪：共 {usage['count']} 个会话，keep={keep}, days={days})")
+            cli_io.result("sessions.prune", data={**plan, "applied": False},
+                          human=f"(无需裁剪：共 {usage['count']} 个会话，keep={keep}, days={days})")
             return 0
-        print(f"将裁剪 {len(plan['removed'])} 个会话（释放约 {plan['freed'] / 1024:.1f} KB）：")
-        for sid in plan["removed"][:20]:
-            print(f"  - {sid}")
+        head = (f"将裁剪 {len(plan['removed'])} 个会话"
+                f"（释放约 {plan['freed'] / 1024:.1f} KB）：")
+        listing = "\n".join(f"  - {sid}" for sid in plan["removed"][:20])
         if len(plan["removed"]) > 20:
-            print(f"  … 其余 {len(plan['removed']) - 20} 个")
-        if getattr(args, "dry_run", False):
-            print("\n(dry-run：没有真的删除)")
+            listing += f"\n  … 其余 {len(plan['removed']) - 20} 个"
+
+        # JSON 模式不交互：没有 --yes 就只出计划（脚本自己决定要不要真删）
+        if getattr(args, "dry_run", False) or (cli_io.json_mode()
+                                               and not getattr(args, "yes", False)):
+            cli_io.result("sessions.prune", data={**plan, "applied": False},
+                          human=f"{head}\n{listing}\n\n(dry-run：没有真的删除)")
             return 0
-        if not getattr(args, "yes", False) and not _confirm("确认裁剪？", default_yes=False):
-            print("已取消")
+        if not cli_io.json_mode() and not getattr(args, "yes", False) \
+                and not _confirm("确认裁剪？", default_yes=False):
+            cli_io.result("sessions.prune", ok=False, data={**plan, "applied": False},
+                          error="用户取消", human="已取消")
             return 0
         result = _sessions.prune_sessions(ws, keep=int(keep or 0),
                                           max_age_days=float(days or 0),
                                           protect=("default",))
-        _print_ok(f"已裁剪 {len(result['removed'])} 个会话（进回收站，uiu trash 可恢复）")
+        cli_io.result("sessions.prune", data={**result, "applied": True},
+                      human=f"{head}\n{listing}\n\n"
+                            f"[ok] 已裁剪 {len(result['removed'])} 个会话"
+                            "（进回收站，uiu trash 可恢复）")
         return 0
 
     if action == "show":
@@ -1272,12 +1304,25 @@ def cmd_sessions(args) -> int:
 # ---------- doctor (OpenClaw-style diagnose & fix) ----------
 
 def cmd_doctor(args) -> int:
-    from .doctor import run_doctor
+    import dataclasses
+
+    from . import cli_io
+    from .doctor import _all_checks, run_doctor
     ws = _workspace(args)
-    return run_doctor(ws, lint=getattr(args, "lint", False),
-                      fix=getattr(args, "fix", False),
-                      yes=getattr(args, "yes", False),
-                      install_deps=getattr(args, "install_deps", False))
+    kwargs = {"lint": getattr(args, "lint", False),
+              "fix": getattr(args, "fix", False),
+              "yes": getattr(args, "yes", False),
+              "install_deps": getattr(args, "install_deps", False)}
+    if not cli_io.json_mode():
+        return run_doctor(ws, **kwargs)
+
+    # JSON 模式：人读过程走 stderr，stdout 只留一个信封
+    rc = run_doctor(ws, out=cli_io.progress, **kwargs)
+    findings = [dataclasses.asdict(f) for f in _all_checks(ws)]
+    cli_io.result("doctor", ok=(rc == 0),
+                  data={"findings": findings, "exit_code": rc, **kwargs},
+                  error="" if rc == 0 else "存在未解决的问题")
+    return rc
 
 
 # ---------- macro (keyboard-macro style record/play) ----------
@@ -1476,16 +1521,23 @@ def cmd_backup(args) -> int:
     ws = _workspace(args)
     from .backup import backup_dir, create_backup, list_backups
 
+    from . import cli_io
+
     if getattr(args, "list", False):
         items = list_backups(ws)
+        data = {"dir": str(backup_dir(ws)),
+                "backups": [{"name": p.name, "bytes": p.stat().st_size,
+                             "mtime": p.stat().st_mtime} for p in items]}
         if not items:
-            print("(还没有备份 —— 运行 uiu backup 立刻做一份)")
+            cli_io.result("backup.list", data=data,
+                          human="(还没有备份 —— 运行 uiu backup 立刻做一份)")
             return 0
-        for p in items:
-            st = p.stat()
-            when = _time.strftime("%Y-%m-%d %H:%M", _time.localtime(st.st_mtime))
-            print(f"  {p.name}   {st.st_size / 1024:8.1f} KB   {when}")
-        print(f"\n目录: {backup_dir(ws)}")
+        listing = "\n".join(
+            f"  {p.name}   {p.stat().st_size / 1024:8.1f} KB   "
+            f"{_time.strftime('%Y-%m-%d %H:%M', _time.localtime(p.stat().st_mtime))}"
+            for p in items)
+        cli_io.result("backup.list", data=data,
+                      human=f"{listing}\n\n目录: {backup_dir(ws)}")
         return 0
 
     to = getattr(args, "to", "") or None
@@ -1493,12 +1545,15 @@ def cmd_backup(args) -> int:
     try:
         path = create_backup(ws, to=to, keep=None if to else keep, note="manual")
     except OSError as exc:
-        _print_err(f"备份失败: {exc}")
+        cli_io.result("backup", ok=False, error=str(exc), human=f"[error] 备份失败: {exc}")
         return 2
-    _print_ok(f"已备份 → {path}")
-    print(f"  恢复: uiu restore \"{path}\"")
-    if (ws / ".env").exists():
-        print("  注意：备份包含 .env（里面有 API key），请当密钥文件保管")
+    has_env = (ws / ".env").exists()
+    lines = [f"[ok] 已备份 → {path}", f'  恢复: uiu restore "{path}"']
+    if has_env:
+        lines.append("  注意：备份包含 .env（里面有 API key），请当密钥文件保管")
+    cli_io.result("backup", data={"path": str(path), "bytes": path.stat().st_size,
+                                  "contains_env": has_env},
+                  human="\n".join(lines))
     return 0
 
 
@@ -1543,14 +1598,16 @@ def cmd_audit(args) -> int:
     ws = _workspace(args)
     from .audit import audit_path, read_events
 
+    from . import cli_io
+
     events = read_events(ws, tail=int(getattr(args, "tail", 30) or 30))
     if not events:
-        print(f"(还没有审计记录 — 工具执行后写入 {audit_path(ws)})")
+        cli_io.result("audit", data={"events": [], "path": str(audit_path(ws))},
+                      human=f"(还没有审计记录 — 工具执行后写入 {audit_path(ws)})")
         return 0
 
-    if getattr(args, "json", False):
-        for event in events:
-            print(_json.dumps(event, ensure_ascii=False))
+    if cli_io.json_mode():
+        cli_io.result("audit", data={"events": events, "path": str(audit_path(ws))})
         return 0
 
     for event in events:
@@ -1562,7 +1619,7 @@ def cmd_audit(args) -> int:
         detail = str(event.get("detail") or event.get("reason") or "")[:70]
         timing = f" {ms}ms" if isinstance(ms, int) and ms else ""
         print(f"  {when}  {kind:<12} {tool:<18} {status:<10}{timing}  {detail}")
-    print(f"\n共 {len(events)} 条 · {audit_path(ws)}")
+    cli_io.progress(f"\n共 {len(events)} 条 · {audit_path(ws)}")
     return 0
 
 
@@ -1584,27 +1641,35 @@ def _session_age_days(ws) -> float:
 # ---------- trash（回收站，审计 §4.1） ----------
 
 def cmd_trash(args) -> int:
+    from . import cli_io
+
     ws = _workspace(args)
     from .trash import DEFAULT_KEEP_DAYS, describe, list_entries, purge, restore
 
     if getattr(args, "restore", ""):
         ok, msg = restore(ws, str(args.restore))
-        (_print_ok if ok else _print_err)(msg)
+        cli_io.result("trash.restore", ok=ok, data={"id": args.restore} if ok else None,
+                      error="" if ok else msg, human=msg)
         return 0 if ok else 2
 
     if getattr(args, "purge", False):
-        removed = purge(ws, days=float(getattr(args, "days", DEFAULT_KEEP_DAYS) or 0))
-        if removed:
-            _print_ok(f"已清理 {len(removed)} 项：{', '.join(removed)}")
-        else:
-            print("(没有超过时限的回收站条目)")
+        days = float(getattr(args, "days", DEFAULT_KEEP_DAYS) or 0)
+        removed = purge(ws, days=days)
+        human = (f"[ok] 已清理 {len(removed)} 项：{', '.join(removed)}" if removed
+                 else "(没有超过时限的回收站条目)")
+        cli_io.result("trash.purge", data={"removed": removed, "days": days}, human=human)
         return 0
 
     entries = list_entries(ws)
+    data = {"count": len(entries),
+            "entries": [{k: e.get(k) for k in ("id", "kind", "label", "origin", "created")}
+                        for e in entries]}
     if not entries:
-        print("(回收站是空的 — 删除会话/宏/渠道/定时任务会先移到这里)")
+        cli_io.result("trash.list", data=data,
+                      human="(回收站是空的 — 删除会话/宏/渠道/定时任务会先移到这里)")
         return 0
-    for entry in entries:
-        print("  " + describe(entry))
-    print(f"\n共 {len(entries)} 项 · 恢复: uiu trash --restore <id> · 清理: uiu trash --purge")
+    listing = "\n".join("  " + describe(entry) for entry in entries)
+    cli_io.result("trash.list", data=data,
+                  human=f"{listing}\n\n共 {len(entries)} 项 · 恢复: uiu trash --restore <id>"
+                        " · 清理: uiu trash --purge")
     return 0

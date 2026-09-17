@@ -40,6 +40,7 @@
 | P0-4 依赖声明修正 | ✅ 完成 | playwright→`[browser]`；uiautomation→`[desktop]`；补齐 numpy/opencv-python（核心）、websockets（browser）、scipy/sounddevice/SpeechRecognition/openai-whisper（voice）；新增扫描测试保证「src 里每个第三方 import 都被声明」；8 个原本在门外的测试模块现在可收集（2 处真实修复 + 显式 skip） |
 | P0-5 错误契约 | ✅ 完成 | `uiu config --list` 遇到坏 config.yaml 现在 stderr + rc=2；`test_broken_config_never_reports_success` 同时锁定 show/config/doctor 三者 |
 | P0-6 日志体系 | ✅ 完成 | 新增 `src/uiu/log.py`（分级 + `RotatingFileHandler` 5MB×3 + workspace 落盘 + 失败降级）；daemon 手写 append 改为结构化日志；gateway 启动/绑定/鉴权/agent 异常/发送失败/定时任务全部落盘；cron 任务开始-结束-异常落盘；损坏文件备份与 config 解析失败落盘；TUI 启动接上日志。测试：`tests/test_logging.py`（9 个，含轮转、级别、密钥不入日志、日志目录不可用时不崩） |
+| P2-16 CLI 进度反馈与 --json | ✅ 完成 | `cli_io.py`（step 进度 + 统一信封 + TTY 检测）；全局/子命令 `--json` 覆盖 doctor/sessions/trash/backup/audit，stdout 纯 JSON、进度走 stderr、退出码不变；publish/update 的长步骤有提示与耗时。测试：`tests/test_cli_output.py`（11） |
 | P2-17 会话生命周期与空间管理 | ✅ 完成 | `sessions_usage`/`prune_sessions`（裁剪进回收站、保守规则、dry-run）；CLI `sessions usage/prune`；TUI 切换器显示占用；配置 `sessions_keep/sessions_max_age_days/sessions_auto_prune`（默认只告警）；doctor `sessions/over-cap`；并把 `list_sessions` 改为按语义时间排序。测试：`tests/test_sessions_lifecycle.py`（15） |
 | P2-15 doctor 覆盖依赖检查 | ✅ 完成 | `_chk_optional_deps` 表驱动体检 5 个可选栈（browser / desktop-uia / voice-tts / voice-stt / rag），给出**可执行的安装命令**；装包需显式 `--fix --install-deps`（默认 `--fix` 不碰 pip——可选栈动辄上百 MB，不该被顺手装上）；缺 `textual`（核心）报 error；UIA 检查只在 Windows 上触发；可选栈缺失为 **info 级**、不影响退出码。测试：`tests/test_doctor_deps.py`（11） |
 | P2-13 破坏性操作可撤销 | ✅ 完成 | `trash.py`（文件类/记录类两种条目、拒绝覆盖、按天清理）+ `uiu trash`；会话/宏/渠道/定时任务删除全部软删除；TUI `Ctrl+Z` 撤销。测试：`tests/test_trash.py`（12） |
@@ -86,6 +87,9 @@
 ### 1.4 加载/进度状态：TUI 有，CLI 没有 — 次要
 **现状**：TUI 有 spinner、耗时、当前工具名；CLI 的 `publish`/`update`/`doctor --fix`/批量宏回放无进度输出。
 **建议**：长任务统一走一个进度输出工具（同一套文案/TTY 检测）。
+
+**已修复（round 14）**：新增 `src/uiu/cli_io.py`——`step()` 给长步骤打「开始提示 + 完成/失败 + 耗时」，
+非 TTY 不打动画；已接入 `uiu publish`（装构建工具/构建/上传）与 `uiu update`（隔离验证/应用更新/PyPI 升级）。
 
 ### 1.5 语言：仅有中文，且无 i18n 机制 — 重要（若面向非中文用户）/次要（若只面向自己）
 **证据**：`src/uiu/*.py` 中含中日韩字符的行 **1,830 行**；无 gettext/`_` 之类的 i18n 层（27 处匹配经查为噪声）。
@@ -192,6 +196,11 @@ daemon 只告警不擅自删）；doctor 增 `sessions/over-cap`（info）。
 ### 4.3 反馈一致性 — 次要
 **现状**：TUI 有 toast/状态条/未读提示（本轮已完善）；CLI 大量 `print`，成败格式不一（`[ok]/[error]/→` 混用）。
 **建议**：定义 CLI 输出规范（成功/警告/错误/下一步四类），并提供 `--json` 便于脚本化。
+
+**已修复（round 14）**：新增全局 `--json`（也可写在子命令后），约定 **stdout 只有一个 JSON 文档**：
+`{"ok": bool, "command": "sessions.usage", "data": {...}}`（失败时带 `error`），进度与提示一律走 stderr；
+退出码语义不变；非交互的 `sessions prune` 在 JSON 模式下必须带 `--yes` 才会真删（否则只出计划）。
+覆盖 `doctor` / `sessions list|usage|prune` / `trash` / `backup` / `audit`。
 
 ### 4.4 无障碍 — 次要（但产品化要写清）
 **现状**：TUI 全键盘可达、颜色与字形双编码（色盲友好）✅；无屏幕阅读器支持、无高对比/大字号模式；中文 Windows 控制台编码问题在 README 有提示但仍易踩（本机实跑见过乱码风险）。

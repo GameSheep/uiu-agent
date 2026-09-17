@@ -212,6 +212,24 @@ uiu                                             # 进全屏 TUI 开聊（--no-tu
 
 ## 完整 CLI 参考
 
+### 给脚本用：`--json`
+
+任何支持的子命令都可以加 `--json`（放在 `uiu` 之后或子命令之后都行）。约定：**stdout 只有一个
+JSON 文档**，进度与提示一律走 stderr，退出码语义不变。
+
+```bash
+uiu --json sessions usage | jq .data.count
+uiu --json doctor --lint  | jq '.data.findings[] | select(.severity=="error")'
+uiu --json trash --restore <id> ; echo "rc=$?"
+```
+
+```json
+{"ok": true, "command": "sessions.usage", "data": {"count": 12, "bytes": 84213}}
+{"ok": false, "command": "trash.restore", "error": "回收站里没有 xxx"}
+```
+
+长任务（`publish` / `update`）会逐步给出「在做什么 + 耗时」，不需要盯着黑屏。
+
 ### 默认行为
 ```
 uiu                          # 不带参数 → 进全屏 TUI（textual；--no-tui 回退经典 REPL）

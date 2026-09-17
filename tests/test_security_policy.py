@@ -258,6 +258,8 @@ def test_cli_audit_prints_events(tmp_path, capsys):
     out = capsys.readouterr().out
     assert "read_file" in out and "ok" in out
 
+    # --json 现在统一走信封（round 14）：stdout 只有一个文档，事件在 data.events 里
     assert main(["--workspace", str(ws), "audit", "--json"]) == 0
-    line = capsys.readouterr().out.strip().splitlines()[0]
-    assert json.loads(line)["tool"] == "read_file"
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["command"] == "audit"
+    assert payload["data"]["events"][0]["tool"] == "read_file"

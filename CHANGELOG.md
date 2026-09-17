@@ -12,6 +12,11 @@
 - **网关默认鉴权**：默认只绑 `127.0.0.1`；无 `UIU_GATEWAY_TOKEN` 时拒绝非本机监听（需显式
   `UIU_GATEWAY_INSECURE=1` 才放行并告警）；新增 `uiu serve --host`；通用 webhook 的 secret 改为必填；
   `uiu doctor` 新增可自动修复的 `channel/gateway-no-token`。
+- **CLI 可脚本化**：新增全局 `--json`（`uiu --json sessions usage`），约定 stdout 只有一个 JSON
+  文档（`{"ok","command","data"}`，失败带 `error`），进度/提示走 stderr，退出码语义不变；
+  `sessions` / `trash` / `backup` / `audit` / `doctor` 已支持。
+- **长任务进度**：新增 `step()`，`uiu publish` 与 `uiu update` 的每个慢步骤会给出提示与耗时
+  （非 TTY 不打动画，日志干净）。
 - **会话生命周期**：`uiu sessions usage`（数量/占用/最大几个）与 `uiu sessions prune`
   （按数量或天数裁剪，**先进回收站可恢复**，支持 `--dry-run`）；TUI 会话切换器显示占用；
   配置项 `sessions_keep` / `sessions_max_age_days` / `sessions_auto_prune`（**默认关**，

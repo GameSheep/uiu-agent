@@ -16,6 +16,12 @@ See @README.md for project overview and @package.json for available npm/pnpm com
 - `src/uiu/app/widgets/*` 里覆写 Textual 的 watcher/生命周期方法时，若基类有同名实现**必须调 `super()`**
   （`watch_scroll_y` 漏调会同时弄坏滚动条位置、锚点和重绘）。
 
+- 状态文件（sessions/config/cron/MEMORY.md/建议/情景记忆）**一律用 `uiu._atomic`**：
+  `atomic_write_json/text` 落盘、`locked_update_json` 做读-改-写、`load_json_tolerant` 读损坏文件
+  （会备份成 `.corrupt-<ts>` 再当空处理）。TUI / gateway / daemon 会同时写同一 workspace，
+  裸 `write_text` 会丢更新或写坏文件。`file_lock` 是「进程内 RLock + 跨进程 OS 锁」两层，
+  缺一不可（Windows 字节锁在同进程的不同句柄之间不冲突）。
+
 ## Common Workflows
 - 跑测试：`.venv\Scripts\python.exe -m pytest tests -q`（`tests/conftest.py` 会自动处理本机
   `mkdir(mode=0o700)` 生成拒绝访问目录的问题，无需自定义 runner）。

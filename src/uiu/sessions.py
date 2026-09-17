@@ -13,6 +13,8 @@ import re
 import time
 from pathlib import Path
 
+from ._atomic import atomic_write_json, file_lock, load_json_tolerant
+
 
 def sessions_dir(workspace: Path) -> Path:
     d = Path(workspace) / "sessions"
@@ -27,8 +29,10 @@ def _path(workspace: Path, sid: str) -> Path:
 
 def save_session(workspace: Path, sid: str, messages: list[dict]) -> str:
     p = _path(workspace, sid)
-    p.write_text(json.dumps({"id": p.stem, "updated": time.time(), "messages": messages},
-                            ensure_ascii=False), encoding="utf-8")
+    payload = {"id": p.stem, "updated": time.time(), "messages": messages}
+    # 原子写 + 加锁：TUI / gateway / daemon 可能同时保存同一个会话
+    with file_lock(p):
+        atomic_write_json(p, payload)
     return str(p)
 
 
@@ -36,25 +40,23 @@ def load_session(workspace: Path, sid: str) -> list[dict] | None:
     p = _path(workspace, sid)
     if not p.exists():
         return None
-    try:
-        data = json.loads(p.read_text(encoding="utf-8"))
-        msgs = data.get("messages")
-        return msgs if isinstance(msgs, list) else None
-    except Exception:
+    data = load_json_tolerant(p, None)      # 损坏文件会先备份再当空处理
+    if not isinstance(data, dict):
         return None
+    msgs = data.get("messages")
+    return msgs if isinstance(msgs, list) else None
 
 
 def list_sessions(workspace: Path) -> list[dict]:
     out = []
     d = sessions_dir(workspace)
     for p in sorted(d.glob("*.json"), key=lambda x: x.stat().st_mtime, reverse=True):
-        try:
-            data = json.loads(p.read_text(encoding="utf-8"))
-            msgs = data.get("messages", [])
-            out.append({"id": p.stem, "updated": data.get("updated", 0),
-                        "turns": sum(1 for m in msgs if m.get("role") == "user")})
-        except Exception:
+        data = load_json_tolerant(p, None)
+        if not isinstance(data, dict):
             continue
+        msgs = data.get("messages", [])
+        out.append({"id": p.stem, "updated": data.get("updated", 0),
+                    "turns": sum(1 for m in msgs if m.get("role") == "user")})
     return out
 
 

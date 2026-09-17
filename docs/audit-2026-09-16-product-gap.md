@@ -35,7 +35,7 @@
 | 项 | 状态 | 证据 |
 |---|---|---|
 | P0-1 网关默认鉴权 | ✅ 完成 | 默认只绑 127.0.0.1（此前硬编码 0.0.0.0）；非本机监听必须有 `UIU_GATEWAY_TOKEN`，否则启动即拒绝（`resolve_bind`），要例外必须显式 `UIU_GATEWAY_INSECURE=1`；新增 `--host`；通用 webhook 的 secret 从可选改为**必填**；启动打印鉴权状态；`uiu doctor` 新增 `channel/gateway-no-token`（可 `--fix` 生成随机 token）。测试：`tests/test_gateway_auth.py`（12 个，含真实 HTTP 401/secret 校验）+ doctor 2 个 |
-| P0-2 原子写 + 文件锁 | 待做 | — |
+| P0-2 原子写 + 文件锁 | ✅ 完成 | 新增 `src/uiu/_atomic.py`（原子写 / 双层锁 / 容错读）；改造 sessions、config（含 .env）、cron（jobs + tick 锁）、learning、memory_rag、episodic_memory、suggestions、daemon 的全部状态写入；损坏文件改为「备份为 `.corrupt-<ts>` 再当空处理」；移除 cron 里 pid+TTL 的抢写锁。测试：`tests/test_atomic_io.py`（10 个，含**跨进程**并发与「写入中途失败旧数据仍可读」） |
 | P0-3 LICENSE | ✅ 完成 | 新增 `LICENSE`（MIT / GameSheep）；pyproject 补 `authors`；`tests/test_packaging_contract.py::test_license_file_matches_metadata` |
 | P0-4 依赖声明修正 | ✅ 完成 | playwright→`[browser]`；uiautomation→`[desktop]`；补齐 numpy/opencv-python（核心）、websockets（browser）、scipy/sounddevice/SpeechRecognition/openai-whisper（voice）；新增扫描测试保证「src 里每个第三方 import 都被声明」；8 个原本在门外的测试模块现在可收集（2 处真实修复 + 显式 skip） |
 | P0-5 错误契约 | ✅ 完成 | `uiu config --list` 遇到坏 config.yaml 现在 stderr + rc=2；`test_broken_config_never_reports_success` 同时锁定 show/config/doctor 三者 |

@@ -65,7 +65,8 @@ def _load_usage(root: Path) -> dict:
 
 
 def _save_usage(root: Path, data: dict) -> None:
-    usage_path(root).write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    from ._atomic import atomic_write_json
+    atomic_write_json(usage_path(root), data, indent=2)
 
 
 def record_macro_play(root: Path, name: str) -> None:
@@ -95,7 +96,8 @@ def _load_state(root: Path) -> dict:
 
 
 def _save_state(root: Path, data: dict) -> None:
-    _state_path(root).write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    from ._atomic import atomic_write_json
+    atomic_write_json(_state_path(root), data, indent=2)
 
 
 # ---------- scanning ----------

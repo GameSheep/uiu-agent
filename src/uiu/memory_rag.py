@@ -215,12 +215,14 @@ def add_memory(text: str, title: str = "") -> str:
     entry = f"- [{timestamp}] {text.strip()}\n"
 
     try:
-        if memory_path.exists():
-            existing = memory_path.read_text(encoding="utf-8")
-            memory_path.write_text(existing + entry, encoding="utf-8")
-        else:
-            memory_path.parent.mkdir(parents=True, exist_ok=True)
-            memory_path.write_text(f"# MEMORY\n{entry}", encoding="utf-8")
+        from ._atomic import atomic_write_text, file_lock
+        with file_lock(memory_path):        # 读-改-写必须互斥，否则并发追加会丢条目
+            if memory_path.exists():
+                existing = memory_path.read_text(encoding="utf-8")
+                atomic_write_text(memory_path, existing + entry)
+            else:
+                memory_path.parent.mkdir(parents=True, exist_ok=True)
+                atomic_write_text(memory_path, f"# MEMORY\n{entry}")
     except Exception:
         return "[error] 写入 MEMORY.md 失败"
 

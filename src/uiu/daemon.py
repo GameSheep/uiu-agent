@@ -19,6 +19,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from ._atomic import atomic_write_text
+
 from . import cron
 
 
@@ -84,7 +86,7 @@ def run_daemon(workspace: Path, interval: int = 60, stop_event=None) -> None:
     """Run the cron tick loop indefinitely in the current process."""
     ws = Path(workspace).resolve()
     pid = os.getpid()
-    pid_path().write_text(str(pid), encoding="utf-8")
+    atomic_write_text(pid_path(), str(pid))
     
     with open(log_path(), "a", encoding="utf-8") as log:
         log.write(f"\n[{time.strftime('%Y-%m-%d %H:%M:%S')}] [daemon] Started (PID {pid}, ws: {ws})\n")
@@ -159,7 +161,7 @@ def start_daemon(workspace: Path) -> tuple[bool, str]:
     # Allow a brief moment to write PID
     time.sleep(0.5)
     pid = proc.pid
-    pid_path().write_text(str(pid), encoding="utf-8")
+    atomic_write_text(pid_path(), str(pid))
     return True, f"后台守护进程已启动 (PID: {pid})，日志记录于: {log_path()}"
 
 
@@ -229,7 +231,7 @@ def install_autostart(workspace: Path) -> tuple[bool, str]:
         f'WshShell.Run """{exe}"" -m uiu.main daemon run --workspace ""{ws}""", 0, False\n'
     )
     try:
-        vbs_path.write_text(vbs_content, encoding="utf-8")
+        atomic_write_text(vbs_path, vbs_content)
         return True, f"已成功注册 Windows 开机自启: {vbs_path}"
     except Exception as e:
         return False, f"注册自启失败: {e}"

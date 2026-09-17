@@ -21,6 +21,7 @@ import re
 import time
 from pathlib import Path
 
+from ._atomic import atomic_write_text
 from .workspace import Workspace
 
 
@@ -153,7 +154,7 @@ def memory_replace(old: str, new: str) -> str:
     if old not in text:
         return f"[error] 未找到包含 '{old[:40]}' 的条目"
     updated = text.replace(old, new)
-    path.write_text(updated, encoding="utf-8")
+    atomic_write_text(path, updated)
     _notify_memory_changed()
     return f"[ok] 已更新记忆"
 
@@ -167,7 +168,7 @@ def memory_remove(content: str) -> str:
     kept = [l for l in lines if content not in l]
     if len(kept) == len(lines):
         return f"[error] 未找到包含 '{content[:40]}' 的条目"
-    path.write_text("\n".join(kept) + "\n", encoding="utf-8")
+    atomic_write_text(path, "\n".join(kept) + "\n")
     _notify_memory_changed()
     return f"[ok] 已删除相关记忆"
 
@@ -202,7 +203,7 @@ def skill_create(name: str, description: str, instructions: str = "") -> str:
         f"## 何时使用\n{desc}\n\n"
         f"## 做法\n{instructions.strip()}\n"
     )
-    (target / "SKILL.md").write_text(body, encoding="utf-8")
+    atomic_write_text(target / "SKILL.md", body)
     return f"[ok] 已创建技能 {safe}（SKILL.md 已写入）"
 
 
@@ -245,7 +246,7 @@ def record_verified_action(
         f"## 何时使用\n{desc}\n\n"
         f"## 做法\n{instructions.strip()}\n"
     )
-    (target_dir / "SKILL.md").write_text(body, encoding="utf-8")
+    atomic_write_text(target_dir / "SKILL.md", body)
 
     # 2. Persist to MEMORY.md
     first_step = steps_list[0] if steps_list else ""
@@ -307,7 +308,7 @@ def skill_improve(name: str, note: str = "") -> str:
             ext_text = core_text + f"\n## 使用记录\n{note_line}\n"
         else:
             ext_text = core_text.replace("## 使用记录", f"## 使用记录\n{note_line}", 1)
-        ext_file.write_text(ext_text, encoding="utf-8")
+        atomic_write_text(ext_file, ext_text)
         return f"[ok] 已改进技能 {safe}（core → ext 层，core 未修改）"
 
     # 4. Fuzzy match
@@ -328,7 +329,7 @@ def _append_usage_note(path: Path, note: str) -> None:
         text += f"\n## 使用记录\n{note_line}\n"
     else:
         text = text.replace("## 使用记录", f"## 使用记录\n{note_line}", 1)
-    path.write_text(text, encoding="utf-8")
+    atomic_write_text(path, text)
 
 
 # ---------- tool definitions (OpenAI function schema) ----------

@@ -205,7 +205,8 @@ def write_env_file(path: Path, values: dict[str, str], overwrite: bool = False) 
             v = '"' + v.replace('"', '\\"') + '"'
         lines.append(f"{k}={v}")
     lines.append("")
-    path.write_text("\n".join(lines), encoding="utf-8")
+    from ._atomic import atomic_write_text
+    atomic_write_text(path, "\n".join(lines))     # .env 里是密钥，不能写半截
 
 
 # ---------- config.yaml ----------
@@ -237,8 +238,10 @@ def save_config(workspace: Path, cfg: AppConfig) -> None:
     path = config_yaml_path(workspace)
     path.parent.mkdir(parents=True, exist_ok=True)
     if _HAS_YAML:
-        with path.open("w", encoding="utf-8") as f:
-            yaml.safe_dump(cfg.to_dict(), f, allow_unicode=True, sort_keys=False)
+        text = yaml.safe_dump(cfg.to_dict(), allow_unicode=True, sort_keys=False)
+        # 原子写：配置被写坏会让所有命令都起不来
+        from ._atomic import atomic_write_text
+        atomic_write_text(path, text)
     else:
         _save_config_fallback(path, cfg)
 
@@ -300,4 +303,5 @@ def _copy_default_workspace(workspace: Path) -> None:
         if dest.exists():
             continue
         dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_text(entry.read_text(encoding="utf-8"), encoding="utf-8")
+        from ._atomic import atomic_write_text as _awt
+        _awt(dest, entry.read_text(encoding="utf-8"))

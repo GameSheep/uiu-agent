@@ -15,6 +15,9 @@ import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from ._atomic import (atomic_write_json, atomic_write_text, file_lock,
+                      load_json_tolerant, locked_update_json)
+
 
 def cron_dir(workspace: Path) -> Path:
     d = Path(workspace) / "cron"
@@ -28,18 +31,12 @@ def jobs_path(workspace: Path) -> Path:
 
 
 def load_jobs(workspace: Path) -> list[dict]:
-    p = jobs_path(workspace)
-    if not p.exists():
-        return []
-    try:
-        data = json.loads(p.read_text(encoding="utf-8"))
-        return data if isinstance(data, list) else []
-    except Exception:
-        return []
+    data = load_json_tolerant(jobs_path(workspace), [])
+    return data if isinstance(data, list) else []
 
 
 def save_jobs(workspace: Path, jobs: list[dict]) -> None:
-    jobs_path(workspace).write_text(json.dumps(jobs, ensure_ascii=False, indent=2), encoding="utf-8")
+    atomic_write_json(jobs_path(workspace), jobs, indent=2)
 
 
 # ---------- schedule parsing ----------
@@ -185,39 +182,50 @@ def next_run_after(parsed: dict, after_ts: float | None = None) -> float:
 
 def add_job(workspace: Path, name: str, schedule: str, task: str, run_shell: bool = False) -> dict:
     parsed = parse_schedule(schedule)  # 先校验，非法直接抛
-    jobs = load_jobs(workspace)
-    jid = f"job-{int(time.time())}-{len(jobs) + 1}"
     now = time.time()
     job = {
-        "id": jid, "name": name, "schedule": schedule,
+        "id": "", "name": name, "schedule": schedule,
         "task": task, "enabled": True,
         "run_shell": bool(run_shell),  # Hermes no_agent：脚本任务零 token，不跑 agent
         "created": now, "last_run": 0, "next_run": next_run_after(parsed, now),
     }
-    jobs.append(job)
-    save_jobs(workspace, jobs)
+
+    def _mutate(jobs: list | None) -> list:
+        current = jobs if isinstance(jobs, list) else []
+        # id 在锁内生成，避免两个进程算出同一个 job-N
+        job["id"] = f"job-{int(now)}-{len(current) + 1}"
+        return current + [job]
+
+    locked_update_json(jobs_path(workspace), _mutate, default=[], indent=2)
     return job
 
 
 def remove_job(workspace: Path, job_id: str) -> bool:
-    jobs = load_jobs(workspace)
-    kept = [j for j in jobs if j["id"] != job_id and j["name"] != job_id]
-    if len(kept) == len(jobs):
-        return False
-    save_jobs(workspace, kept)
-    return True
+    removed = {"hit": False}
+
+    def _mutate(jobs: list | None) -> list:
+        current = jobs if isinstance(jobs, list) else []
+        kept = [j for j in current if j["id"] != job_id and j["name"] != job_id]
+        removed["hit"] = len(kept) != len(current)
+        return kept
+
+    locked_update_json(jobs_path(workspace), _mutate, default=[], indent=2)
+    return bool(removed["hit"])
 
 
 def set_enabled(workspace: Path, job_id: str, enabled: bool) -> bool:
-    jobs = load_jobs(workspace)
-    hit = False
-    for j in jobs:
-        if j["id"] == job_id or j["name"] == job_id:
-            j["enabled"] = enabled
-            hit = True
-    if hit:
-        save_jobs(workspace, jobs)
-    return hit
+    changed = {"hit": False}
+
+    def _mutate(jobs: list | None) -> list:
+        current = jobs if isinstance(jobs, list) else []
+        for j in current:
+            if j["id"] == job_id or j["name"] == job_id:
+                j["enabled"] = enabled
+                changed["hit"] = True
+        return current
+
+    locked_update_json(jobs_path(workspace), _mutate, default=[], indent=2)
+    return bool(changed["hit"])
 
 
 def due_jobs(workspace: Path, now: float | None = None) -> list[dict]:
@@ -227,33 +235,9 @@ def due_jobs(workspace: Path, now: float | None = None) -> list[dict]:
 
 # ---------- running ----------
 
-def _lock_path(workspace: Path) -> Path:
-    return cron_dir(workspace) / ".tick.lock"
-
-
-def _acquire_lock(workspace: Path, ttl: int = 300) -> bool:
-    """防重跑锁（pid + 时间戳，TTL 过期可抢）。"""
-    p = _lock_path(workspace)
-    now = time.time()
-    if p.exists():
-        try:
-            pid, ts = p.read_text(encoding="utf-8").split(":")
-            if now - float(ts) < ttl:
-                return False
-        except Exception:
-            pass
-    try:
-        p.write_text(f"{os.getpid()}:{now}", encoding="utf-8")
-        return True
-    except OSError:
-        return False
-
-
-def _release_lock(workspace: Path) -> None:
-    try:
-        _lock_path(workspace).unlink(missing_ok=True)
-    except OSError:
-        pass
+def _tick_lock_path(workspace: Path) -> Path:
+    """Tick 互斥用的锁文件（真正的 OS 级锁，不再是 pid+TTL 抢写）。"""
+    return cron_dir(workspace) / ".tick"
 
 
 def _run_shell_job(job: dict) -> str:
@@ -315,7 +299,7 @@ def run_job(workspace: Path, job: dict, timeout: int = 180) -> str:
         out_dir = cron_dir(ws_path) / "output" / job["id"]
         out_dir.mkdir(parents=True, exist_ok=True)
         out_path = out_dir / f"{ts}.md"
-        out_path.write_text(f"# {job.get('name')} @ {ts}\n\n{reply}\n", encoding="utf-8")
+        atomic_write_text(out_path, f"# {job.get('name')} @ {ts}\n\n{reply}\n")
         return str(out_path)
 
 
@@ -335,31 +319,35 @@ def _reschedule(job: dict, now: float) -> None:
 def tick(workspace: Path) -> list[str]:
     """Run all due jobs once. Returns output paths. Lock-protected."""
     ws_path = Path(workspace)
-    if not _acquire_lock(ws_path):
-        return []
-    ran: list[str] = []
     try:
-        now = time.time()
-        jobs = load_jobs(ws_path)
-        if not jobs:
-            return []
-        for job in jobs:
-            if not job.get("enabled") or job.get("next_run", 0) > now:
-                continue
-            try:
-                out = run_job(ws_path, job)
-                ran.append(out)
-            except Exception as e:
-                err_dir = cron_dir(ws_path) / "output" / job["id"]
-                err_dir.mkdir(parents=True, exist_ok=True)
-                (err_dir / f"{time.strftime('%Y%m%d_%H%M%S')}.err.md").write_text(
-                    f"[tick error] {type(e).__name__}: {e}\n", encoding="utf-8")
-            job["last_run"] = now
-            _reschedule(job, now)
-        save_jobs(ws_path, jobs)
-        return ran
-    finally:
-        _release_lock(ws_path)
+        # 进程级 + 跨进程互斥；拿不到说明另一个进程正在 tick，直接跳过
+        with file_lock(_tick_lock_path(ws_path), timeout=0.2):
+            return _tick_locked(ws_path)
+    except TimeoutError:
+        return []
+
+
+def _tick_locked(ws_path: Path) -> list[str]:
+    ran: list[str] = []
+    now = time.time()
+    jobs = load_jobs(ws_path)
+    if not jobs:
+        return []
+    for job in jobs:
+        if not job.get("enabled") or job.get("next_run", 0) > now:
+            continue
+        try:
+            out = run_job(ws_path, job)
+            ran.append(out)
+        except Exception as e:
+            err_dir = cron_dir(ws_path) / "output" / job["id"]
+            err_dir.mkdir(parents=True, exist_ok=True)
+            atomic_write_text(err_dir / f"{time.strftime('%Y%m%d_%H%M%S')}.err.md",
+                              f"[tick error] {type(e).__name__}: {e}\n")
+        job["last_run"] = now
+        _reschedule(job, now)
+    save_jobs(ws_path, jobs)
+    return ran
 
 
 # ---------- agent-facing cron tools ----------

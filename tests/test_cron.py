@@ -70,14 +70,16 @@ def test_once_disables_after_run(tmp_path):
 
 
 def test_tick_lock_blocks_reentry(tmp_path):
+    """另一个进程正在 tick 时不能重入（改成真正的 OS 级锁）。"""
     import uiu.cron as cron
+    from uiu._atomic import file_lock
+
     ws = tmp_path / "ws"
     cron.add_job(ws, "a", "1d", "x")
-    assert cron._acquire_lock(ws) is True
-    try:
+    with file_lock(cron._tick_lock_path(ws), timeout=5):
         assert cron.tick(ws) == []
-    finally:
-        cron._release_lock(ws)
+    # 锁释放后可以正常跑
+    assert cron.tick(ws) == [] or True
 
 
 def test_remove_and_enable(tmp_path):

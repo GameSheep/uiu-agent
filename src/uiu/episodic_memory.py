@@ -35,9 +35,10 @@ def _load_store() -> list[dict[str, Any]]:
 
 
 def _save_store(episodes: list[dict[str, Any]]) -> None:
+    from ._atomic import atomic_write_json
     p = _get_episodic_file()
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(episodes, ensure_ascii=False, indent=2), encoding="utf-8")
+    atomic_write_json(p, episodes, indent=2)
 
 
 def _extract_keywords(text: str) -> list[str]:

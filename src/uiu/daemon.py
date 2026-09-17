@@ -92,6 +92,13 @@ def run_daemon(workspace: Path, interval: int = 60, stop_event=None) -> None:
     setup_logging(ws)
     log = get_logger("daemon")
     log.info("started (PID %s, ws %s, interval %ss)", pid, ws, interval)
+    try:                                  # 每日滚动备份：用户数据的最后一道兜底
+        from .backup import maybe_daily_backup
+        made = maybe_daily_backup(ws)
+        if made:
+            log.info("daily backup → %s", made)
+    except Exception as exc:
+        log.exception("daily backup failed: %s", exc)
 
     try:
         while True:

@@ -554,6 +554,23 @@ uiu sessions search <关键词>   # 跨会话关键词检索（免费秒回）
 uiu sessions remove <名>
 ```
 
+### `backup` / `restore`
+
+用户数据的兜底：配置、会话、记忆、技能、定时任务打包成一个 zip；恢复前会自动留一份快照，
+所以**恢复本身也是可撤销的**。
+
+```bash
+uiu backup                     # → <workspace>/backups/uiu-backup-<时间戳>.zip（滚动保留 7 份）
+uiu backup --list              # 看已有备份
+uiu backup --to D:\uiu-bak     # 备份到别处（不影响 workspace 内的滚动保留）
+uiu restore <zip>              # 覆盖前会确认，并先做一份 pre-restore 快照
+uiu restore <zip> --yes        # 跳过确认（脚本/自动化用）
+```
+
+备份内容：`config.yaml`、`.env`、`SOUL/IDENTITY/USER/MEMORY.md`、`sessions/`、`cron/`、`skills/`；
+**不含** `logs/`、`cron/output/`、`backups/`、锁与临时文件。
+注意 `.env` 里有 API key，备份文件请按密钥文件保管。`uiu daemon` 起手会做每日自动备份（24h 一次）。
+
 ## 怎么变成"你的 agent"
 
 1. **改 SOUL.md**：写你的价值观、口头禅、不喜欢的东西。这是灵魂。

@@ -18,6 +18,7 @@ from pathlib import Path
 from ._atomic import (atomic_write_json, atomic_write_text, file_lock,
                       load_json_tolerant, locked_update_json)
 from .log import get_logger
+from .schema import migrate, stamp
 
 
 def cron_dir(workspace: Path) -> Path:
@@ -31,13 +32,34 @@ def jobs_path(workspace: Path) -> Path:
     return cron_dir(workspace) / "jobs.json"
 
 
+def _jobs_of(payload) -> list[dict]:
+    """兼容 v0（顶层裸 list）与 v1（{schema, jobs}）。"""
+    data, _ = migrate("jobs", payload)
+    if isinstance(data, list):                 # 迁移路径缺失时的兜底
+        return data
+    jobs = data.get("jobs") if isinstance(data, dict) else None
+    return jobs if isinstance(jobs, list) else []
+
+
 def load_jobs(workspace: Path) -> list[dict]:
-    data = load_json_tolerant(jobs_path(workspace), [])
-    return data if isinstance(data, list) else []
+    return _jobs_of(load_json_tolerant(jobs_path(workspace), []))
 
 
 def save_jobs(workspace: Path, jobs: list[dict]) -> None:
-    atomic_write_json(jobs_path(workspace), jobs, indent=2)
+    atomic_write_json(jobs_path(workspace), stamp("jobs", {"jobs": jobs}), indent=2)
+
+
+def update_jobs(workspace: Path, mutate) -> list[dict]:
+    """锁内「读-升级-改-写」：迁移必须在锁内做，否则会把 v1 数据当空表覆盖。"""
+    result: dict = {}
+
+    def _inner(payload):
+        jobs = _jobs_of(payload)
+        result["jobs"] = mutate(jobs)
+        return stamp("jobs", {"jobs": result["jobs"]})
+
+    locked_update_json(jobs_path(workspace), _inner, default=[], indent=2)
+    return result.get("jobs", [])
 
 
 # ---------- schedule parsing ----------
@@ -191,41 +213,38 @@ def add_job(workspace: Path, name: str, schedule: str, task: str, run_shell: boo
         "created": now, "last_run": 0, "next_run": next_run_after(parsed, now),
     }
 
-    def _mutate(jobs: list | None) -> list:
-        current = jobs if isinstance(jobs, list) else []
+    def _mutate(jobs: list[dict]) -> list[dict]:
         # id 在锁内生成，避免两个进程算出同一个 job-N
-        job["id"] = f"job-{int(now)}-{len(current) + 1}"
-        return current + [job]
+        job["id"] = f"job-{int(now)}-{len(jobs) + 1}"
+        return jobs + [job]
 
-    locked_update_json(jobs_path(workspace), _mutate, default=[], indent=2)
+    update_jobs(workspace, _mutate)
     return job
 
 
 def remove_job(workspace: Path, job_id: str) -> bool:
     removed = {"hit": False}
 
-    def _mutate(jobs: list | None) -> list:
-        current = jobs if isinstance(jobs, list) else []
-        kept = [j for j in current if j["id"] != job_id and j["name"] != job_id]
-        removed["hit"] = len(kept) != len(current)
+    def _mutate(jobs: list[dict]) -> list[dict]:
+        kept = [j for j in jobs if j["id"] != job_id and j["name"] != job_id]
+        removed["hit"] = len(kept) != len(jobs)
         return kept
 
-    locked_update_json(jobs_path(workspace), _mutate, default=[], indent=2)
+    update_jobs(workspace, _mutate)
     return bool(removed["hit"])
 
 
 def set_enabled(workspace: Path, job_id: str, enabled: bool) -> bool:
     changed = {"hit": False}
 
-    def _mutate(jobs: list | None) -> list:
-        current = jobs if isinstance(jobs, list) else []
-        for j in current:
+    def _mutate(jobs: list[dict]) -> list[dict]:
+        for j in jobs:
             if j["id"] == job_id or j["name"] == job_id:
                 j["enabled"] = enabled
                 changed["hit"] = True
-        return current
+        return jobs
 
-    locked_update_json(jobs_path(workspace), _mutate, default=[], indent=2)
+    update_jobs(workspace, _mutate)
     return bool(changed["hit"])
 
 

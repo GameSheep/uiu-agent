@@ -46,6 +46,9 @@ See @README.md for project overview and @package.json for available npm/pnpm com
 - 「空」只能有一个定义（`_turns()`），别用 markdown 文本长度之类间接信号。
 - 面向用户的「能点/能按」必须真的有效：折叠条到上限就别再写「点击展开」，不可中断的命令别写 Esc。
 - 静默丢弃用户操作是最糟的反馈：宁可弹一条红色轻提示说明原因。
+- 测试里调用 `uiu.main.main()` 时，**不要让该 workspace 的 `.env` 含真实密钥名**
+  （`main()` 会把 `.env` 载入 `os.environ`，会污染同进程后续测试 —— doctor 的 no-api-key
+  检查曾因此误判）。用 `SMOKE_TOKEN=...` 这类中性名字。
 - 测试不要依赖墙上时间：需要「回合进行中」就先断言 `app._turn_running`，并把假回合的 sleep 放长；
   需要断言「本次反馈」就先清掉上一条 toast。慢机器上 0.9s 的回合会在两行断言之间就结束。
 

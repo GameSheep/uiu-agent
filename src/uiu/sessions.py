@@ -14,6 +14,7 @@ import time
 from pathlib import Path
 
 from ._atomic import atomic_write_json, file_lock, load_json_tolerant
+from .schema import migrate, stamp
 
 
 def sessions_dir(workspace: Path) -> Path:
@@ -29,7 +30,7 @@ def _path(workspace: Path, sid: str) -> Path:
 
 def save_session(workspace: Path, sid: str, messages: list[dict]) -> str:
     p = _path(workspace, sid)
-    payload = {"id": p.stem, "updated": time.time(), "messages": messages}
+    payload = stamp("session", {"id": p.stem, "updated": time.time(), "messages": messages})
     # 原子写 + 加锁：TUI / gateway / daemon 可能同时保存同一个会话
     with file_lock(p):
         atomic_write_json(p, payload)
@@ -41,6 +42,9 @@ def load_session(workspace: Path, sid: str) -> list[dict] | None:
     if not p.exists():
         return None
     data = load_json_tolerant(p, None)      # 损坏文件会先备份再当空处理
+    if data is None:
+        return None
+    data, _ = migrate("session", data)      # 老格式在读时透明升级
     if not isinstance(data, dict):
         return None
     msgs = data.get("messages")
@@ -52,6 +56,9 @@ def list_sessions(workspace: Path) -> list[dict]:
     d = sessions_dir(workspace)
     for p in sorted(d.glob("*.json"), key=lambda x: x.stat().st_mtime, reverse=True):
         data = load_json_tolerant(p, None)
+        if data is None:
+            continue
+        data, _ = migrate("session", data)
         if not isinstance(data, dict):
             continue
         msgs = data.get("messages", [])

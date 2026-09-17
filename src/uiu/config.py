@@ -230,6 +230,17 @@ def load_config(workspace: Path) -> AppConfig:
         raise RuntimeError(f"config.yaml 解析失败 ({path}): {type(e).__name__}: {e}") from e
     if not isinstance(data, dict):
         raise RuntimeError(f"config.yaml 顶层须为 mapping ({path})")
+    from .schema import migrate as _migrate
+    data, applied = _migrate("config", data)
+    if applied:
+        from .log import get_logger
+        get_logger("config").info("config.yaml 已迁移: %s", ", ".join(applied))
+        try:                       # 把版本号落盘，避免每次启动重复迁移
+            text = yaml.safe_dump(data, allow_unicode=True, sort_keys=False)
+            from ._atomic import atomic_write_text
+            atomic_write_text(path, text)
+        except Exception:
+            pass
     try:
         return AppConfig.from_dict(data)
     except Exception as e:
@@ -240,7 +251,8 @@ def save_config(workspace: Path, cfg: AppConfig) -> None:
     path = config_yaml_path(workspace)
     path.parent.mkdir(parents=True, exist_ok=True)
     if _HAS_YAML:
-        text = yaml.safe_dump(cfg.to_dict(), allow_unicode=True, sort_keys=False)
+        from .schema import stamp as _stamp
+        text = yaml.safe_dump(_stamp("config", cfg.to_dict()), allow_unicode=True, sort_keys=False)
         # 原子写：配置被写坏会让所有命令都起不来
         from ._atomic import atomic_write_text
         atomic_write_text(path, text)

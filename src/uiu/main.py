@@ -222,6 +222,16 @@ def _build_parser() -> argparse.ArgumentParser:
     pdoc.add_argument("--fix", action="store_true", help="apply auto-fixes (prompts per item)")
     pdoc.add_argument("--yes", action="store_true", help="with --fix: apply all without prompting")
 
+    # backup / restore（用户数据兜底，审计 §3.4）
+    pbk = sub.add_parser("backup", help="back up the workspace (config/sessions/memory/skills)")
+    pbk.add_argument("--to", default="", help="target dir (default: <workspace>/backups)")
+    pbk.add_argument("--keep", type=int, default=7, help="keep the newest N backups (default 7)")
+    pbk.add_argument("--list", action="store_true", help="list existing backups and exit")
+    prs = sub.add_parser("restore", help="restore a workspace from a backup zip")
+    prs.add_argument("archive", help="path to uiu-backup-*.zip")
+    prs.add_argument("--yes", action="store_true", help="skip the confirmation prompt")
+    prs.add_argument("--keep", type=int, default=7, help="keep the newest N backups (default 7)")
+
     # daemon (background cron service)
     pdm = sub.add_parser("daemon", help="manage background cron daemon and autostart")
     pdm_sub = pdm.add_subparsers(dest="action", metavar="<action>", required=True)
@@ -387,7 +397,7 @@ def _dispatch(args, parser: argparse.ArgumentParser) -> int:
     from .commands import (
         cmd_channel, cmd_config, cmd_cron, cmd_daemon, cmd_doctor, cmd_init, cmd_macro, cmd_model,
         cmd_sessions, cmd_show, cmd_update, cmd_version, cmd_skills, cmd_publish, cmd_plugins,
-        cmd_serve, cmd_quick,
+        cmd_serve, cmd_quick, cmd_backup, cmd_restore,
     )
 
     if args.version or args.cmd == "version":
@@ -409,6 +419,8 @@ def _dispatch(args, parser: argparse.ArgumentParser) -> int:
         "sessions": cmd_sessions,
         "macro": cmd_macro,
         "quick": cmd_quick,
+        "backup": cmd_backup,
+        "restore": cmd_restore,
         "doctor": cmd_doctor,
     }
     handler = handlers.get(args.cmd)

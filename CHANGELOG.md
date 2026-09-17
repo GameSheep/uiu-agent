@@ -7,6 +7,27 @@
 
 ### Added
 
+**产品化补齐（按 docs/audit-2026-09-16-product-gap.md 逐条实施）**
+
+- **网关默认鉴权**：默认只绑 `127.0.0.1`；无 `UIU_GATEWAY_TOKEN` 时拒绝非本机监听（需显式
+  `UIU_GATEWAY_INSECURE=1` 才放行并告警）；新增 `uiu serve --host`；通用 webhook 的 secret 改为必填；
+  `uiu doctor` 新增可自动修复的 `channel/gateway-no-token`。
+- **原子写 + 文件锁**：新增 `src/uiu/_atomic.py`（同目录临时文件 + fsync + os.replace；进程内 RLock +
+  跨进程 OS 锁；锁内读-改-写；损坏文件备份为 `.corrupt-<ts>`），全部状态文件（sessions/config/.env/
+  cron/记忆/建议/情景记忆/daemon pid）改走它；cron tick 的 pid+TTL 抢写锁换成真正的 OS 级锁。
+- **日志体系**：新增 `src/uiu/log.py`（`<workspace>/logs/uiu.log`，5MB×3 轮转，`UIU_LOG_LEVEL` 控级别，
+  `UIU_LOG_CONSOLE=1` 才打终端，失败即降级）；daemon/gateway/cron/config/TUI 全部接入。
+- **schema 版本与迁移**：`config.yaml` / `sessions/*.json` / `cron/jobs.json` 带版本号，读时自动迁移
+  （jobs.json 由裸 list 变为 `{schema, jobs}`，迁移在锁内进行）。
+- **备份 / 恢复**：`uiu backup [--to/--keep/--list]` 与 `uiu restore <zip> [--yes]`；滚动保留 7 份、
+  恢复前自动快照（可撤销）、拒绝 zip-slip 与绝对路径；`uiu daemon` 每日自动备份。
+- **覆盖率门禁**：`[test]` 加 coverage/pytest-cov，CI 增加 `--cov-fail-under=50`（实测基线 53.5%）。
+- **LICENSE**（MIT）与 pyproject `authors`；补齐 10 个未声明的第三方依赖（playwright 移入 `[browser]`、
+  uiautomation 移入 `[desktop]`、numpy/opencv/scipy/websockets/sounddevice 等），并加测试保证
+  「src 里每个第三方 import 都已在 pyproject 声明」。
+- **错误契约**：坏 config.yaml 下 `uiu config --list` 不再静默返回 0（stderr + rc=2）。
+- 版本单一来源测试（pyproject == __init__ == npm == CHANGELOG）。
+
 **TUI 重做（对标 OpenClaw / Hermes 的精致度）**
 
 - **设计令牌层** `src/uiu/app/theme.py`：4 套内置主题（`uiu-dark` / `uiu-mono` / `uiu-neon` / `uiu-solar`）、

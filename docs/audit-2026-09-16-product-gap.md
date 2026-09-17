@@ -40,6 +40,7 @@
 | P0-4 依赖声明修正 | ✅ 完成 | playwright→`[browser]`；uiautomation→`[desktop]`；补齐 numpy/opencv-python（核心）、websockets（browser）、scipy/sounddevice/SpeechRecognition/openai-whisper（voice）；新增扫描测试保证「src 里每个第三方 import 都被声明」；8 个原本在门外的测试模块现在可收集（2 处真实修复 + 显式 skip） |
 | P0-5 错误契约 | ✅ 完成 | `uiu config --list` 遇到坏 config.yaml 现在 stderr + rc=2；`test_broken_config_never_reports_success` 同时锁定 show/config/doctor 三者 |
 | P0-6 日志体系 | ✅ 完成 | 新增 `src/uiu/log.py`（分级 + `RotatingFileHandler` 5MB×3 + workspace 落盘 + 失败降级）；daemon 手写 append 改为结构化日志；gateway 启动/绑定/鉴权/agent 异常/发送失败/定时任务全部落盘；cron 任务开始-结束-异常落盘；损坏文件备份与 config 解析失败落盘；TUI 启动接上日志。测试：`tests/test_logging.py`（9 个，含轮转、级别、密钥不入日志、日志目录不可用时不崩） |
+| P1-9 schema 版本 + 迁移 + 备份恢复 | ✅ 完成 | `schema.py`：config/session/jobs 带版本号并读时迁移（jobs 是真实结构变更，迁移在锁内做）；`backup.py` + `uiu backup/restore`：滚动 7 份、恢复前快照可撤销、拒绝 zip-slip、daemon 每日自动备份。测试：`test_schema_migration.py`(11) + `test_backup_restore.py`(11) |
 | P1-7 覆盖率基线 | ✅ 完成 | 实测 53.5%；CI 门禁 `--cov-fail-under=50`；零覆盖模块与最弱 10 个已记录（见 §6.1） |
 | 版本单一来源 | ✅ 完成 | npm 0.1.5 → 0.1.7；`test_version_is_single_source` 锁定 pyproject/__init__/npm/CHANGELOG |
 
@@ -135,9 +136,19 @@
 **证据**：未见存储格式版本字段与迁移函数（6 处 `version` 匹配均为其他语义，如 tool defs）。配置/会话/记忆格式一旦演进，老用户数据没有升级路径。
 **建议**：在 config.yaml / sessions / jobs.json 顶层加 `schema: 1`，写迁移表 + 启动时自动迁移 + 迁移前自动备份。
 
+**已修复（round 7）**：新增 `src/uiu/schema.py`（版本探测 + 纯函数迁移表 + `stamp`）；
+`config.yaml` / `sessions/*.json` / `cron/jobs.json` 全部带版本号，读时自动迁移（config 迁移后立即落盘）。
+其中 **jobs.json 是真实的结构变更**：v0 顶层是裸 list，v1 是 `{schema, jobs}` —— 迁移放在锁内做，
+否则「锁内读-改-写」会把 v1 数据当空表覆盖（有专门测试盯着）。
+
 ### 3.4 无用户数据备份/导出 — 重要
 **证据**：备份相关仅 `uiu update` 的 git tag 回滚点（`commands.py:797`）；用户侧无 `uiu export`/`backup` 命令（`/export` 只导出当前会话 Markdown）。
 **建议**：`uiu backup [--to DIR]`（打包 workspace 关键文件 + 版本信息）与 `uiu restore`；自动每日滚动备份保留 N 份。
+
+**已修复（round 7）**：新增 `src/uiu/backup.py` + CLI `uiu backup [--to/--keep/--list]` 与 `uiu restore <zip> [--yes]`。
+打包 config/.env/记忆/会话/cron/skills（排除 logs/output/backups/锁/临时文件）；滚动保留 7 份；
+**恢复前自动做 pre-restore 快照**（恢复可撤销）；恢复时拒绝 zip-slip 与绝对路径成员（整体拒绝，不写半个文件）；
+`uiu daemon` 起手做每日自动备份。
 
 ### 3.5 会话无生命周期管理（待验证） — 次要
 **现状**：`workspace/sessions/*.json` 只增不减；TUI 支持单个删除。

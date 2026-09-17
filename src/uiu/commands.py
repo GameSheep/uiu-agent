@@ -1393,3 +1393,70 @@ def cmd_daemon(args) -> int:
             return 2
 
     return 2
+
+# ---------- backup / restore（审计 §3.4） ----------
+
+def cmd_backup(args) -> int:
+    """把 workspace 关键文件打包；默认滚动保留最近 N 份。"""
+    import time as _time
+
+    ws = _workspace(args)
+    from .backup import backup_dir, create_backup, list_backups
+
+    if getattr(args, "list", False):
+        items = list_backups(ws)
+        if not items:
+            print("(还没有备份 —— 运行 uiu backup 立刻做一份)")
+            return 0
+        for p in items:
+            st = p.stat()
+            when = _time.strftime("%Y-%m-%d %H:%M", _time.localtime(st.st_mtime))
+            print(f"  {p.name}   {st.st_size / 1024:8.1f} KB   {when}")
+        print(f"\n目录: {backup_dir(ws)}")
+        return 0
+
+    to = getattr(args, "to", "") or None
+    keep = getattr(args, "keep", 7)
+    try:
+        path = create_backup(ws, to=to, keep=None if to else keep, note="manual")
+    except OSError as exc:
+        _print_err(f"备份失败: {exc}")
+        return 2
+    _print_ok(f"已备份 → {path}")
+    print(f"  恢复: uiu restore \"{path}\"")
+    if (ws / ".env").exists():
+        print("  注意：备份包含 .env（里面有 API key），请当密钥文件保管")
+    return 0
+
+
+def cmd_restore(args) -> int:
+    """从备份恢复；恢复前自动做一份 pre-restore 快照，可撤销。"""
+    ws = _workspace(args)
+    from .backup import restore_backup
+
+    archive = Path(str(getattr(args, "archive", ""))).expanduser()
+    if not archive.is_file():
+        _print_err(f"找不到备份文件: {archive}")
+        return 2
+
+    if not getattr(args, "yes", False):
+        print(f"将用 {archive.name} 覆盖当前 workspace: {ws}")
+        print("（恢复前会自动做一份 pre-restore 备份，可撤销）")
+        if not _confirm("确认恢复？", default_yes=False):
+            print("已取消")
+            return 0
+
+    try:
+        result = restore_backup(ws, archive, keep=getattr(args, "keep", 7))
+    except ValueError as exc:
+        _print_err(str(exc))            # zip-slip 等越界内容
+        return 2
+    except Exception as exc:
+        _print_err(f"恢复失败: {type(exc).__name__}: {exc}")
+        return 2
+
+    _print_ok(f"已恢复 {len(result.get('restored', []))} 个文件")
+    if result.get("safety_backup"):
+        print(f"  恢复前快照: {result['safety_backup']}")
+    print("  提示：重启 uiu 让新配置生效")
+    return 0

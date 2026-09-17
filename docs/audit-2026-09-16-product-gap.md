@@ -40,6 +40,7 @@
 | P0-4 依赖声明修正 | ✅ 完成 | playwright→`[browser]`；uiautomation→`[desktop]`；补齐 numpy/opencv-python（核心）、websockets（browser）、scipy/sounddevice/SpeechRecognition/openai-whisper（voice）；新增扫描测试保证「src 里每个第三方 import 都被声明」；8 个原本在门外的测试模块现在可收集（2 处真实修复 + 显式 skip） |
 | P0-5 错误契约 | ✅ 完成 | `uiu config --list` 遇到坏 config.yaml 现在 stderr + rc=2；`test_broken_config_never_reports_success` 同时锁定 show/config/doctor 三者 |
 | P0-6 日志体系 | ✅ 完成 | 新增 `src/uiu/log.py`（分级 + `RotatingFileHandler` 5MB×3 + workspace 落盘 + 失败降级）；daemon 手写 append 改为结构化日志；gateway 启动/绑定/鉴权/agent 异常/发送失败/定时任务全部落盘；cron 任务开始-结束-异常落盘；损坏文件备份与 config 解析失败落盘；TUI 启动接上日志。测试：`tests/test_logging.py`（9 个，含轮转、级别、密钥不入日志、日志目录不可用时不崩） |
+| P1-12 真 LLM 最小 E2E + 平台支持矩阵 | ✅ 完成 | `tests/test_e2e_live_llm.py`（`live` 标记，默认跳过，验证「模型→工具→守卫→审计」整条链路，已证明非静默跳过）；`docs/platform-support.md`（能力矩阵 + 30 个 Windows 专有模块**扫描生成** + `--check`）；doctor 增 `platform/degraded`。测试：`tests/test_platform_support.py`（6） |
 | P1-10 架构/工具/网关 API 文档 | ✅ 完成 | 新增 `docs/architecture.md`（分层/进程模型/数据流/状态与写入约定/安全模型）、`docs/tools.md`（**生成物**，123 工具按模块分组 + 参数 + 需确认标记 + `--check`）、`docs/gateway-api.md`（端点表/鉴权矩阵/回调样例/返回约定）、`docs/troubleshooting.md`；README 加文档索引并修掉三处假数字。测试：`tests/test_docs_sync.py`（12） |
 | P1-8 路径白名单 + shell 语义确认 + 审计日志 | ✅ 完成 | `classify_path` 三态路径决策（白名单/越界确认/凭据拒绝）；`classify_command` 语义分级（只读放行，写/网络/进程/系统/包管理/解释器/未知一律确认，破坏性拒绝）；确认框显示完整命令+cwd；`audit.py` append-only JSONL（脱敏、滚动）+ `uiu audit`。测试：`tests/test_security_policy.py`（48）。**未做**：本次会话内允许同类（有意保留每次确认） |
 | P1-9 schema 版本 + 迁移 + 备份恢复 | ✅ 完成 | `schema.py`：config/session/jobs 带版本号并读时迁移（jobs 是真实结构变更，迁移在锁内做）；`backup.py` + `uiu backup/restore`：滚动 7 份、恢复前快照可撤销、拒绝 zip-slip、daemon 每日自动备份。测试：`test_schema_migration.py`(11) + `test_backup_restore.py`(11) |
@@ -260,6 +261,12 @@ source/omit/exclude；CI 增加 `--cov=uiu --cov-report=term-missing --cov-fail-
 **证据**：CI 只跑离线单测 + CLI 冒烟 + Windows 安装态验收；无真实 LLM、真实浏览器、真实桌面操作的 E2E。
 **建议**：加一条「真 LLM 最小闭环」E2E（可选 secret，缺失即 skip）；桌面/浏览器 E2E 用录制回放或明确标注「不支持 CI」。
 
+**已修复（round 10）**：新增 `tests/test_e2e_live_llm.py`（标记 `live`）——两条用例：
+「真模型回一句话」与「模型决定调 shell_exec → 守卫放行 → 真实执行 → 结果回填 → **审计留痕**」。
+默认跳过，需同时满足 `UIU_E2E_LIVE=1` **且** 能解析出 API key（避免 CI 误花钱）。
+已验证「不是静默跳过」：用假 key 开启开关时，用例确实发起了真实请求并因 401 失败。
+桌面/浏览器 E2E 仍明确标注为「不支持 CI」（见 `docs/platform-support.md`）。
+
 ### 6.4 关键风险缺测试 — 重要
 **缺口**：并发写/崩溃恢复/迁移/备份恢复/鉴权边界/注入场景。
 **建议**：按本文档 P0 项逐条配测试（先写失败测试再修）。
@@ -284,6 +291,11 @@ source/omit/exclude；CI 增加 `--cov=uiu --cov-report=term-missing --cov-fail-
 ### 7.4 平台支持不清 — 重要
 **现状**：大量 `win32*`/`pyautogui`/Windows 路径逻辑；Linux/macOS 未验证，README 未给支持矩阵。
 **建议**：明确「Windows 一等公民，其他平台仅核心可用」并逐条标注哪些命令/工具不可用。
+
+**已修复（round 10）**：新增 `docs/platform-support.md`——能力矩阵（CLI/TUI/网关/会话记忆/文件 shell 联网/
+剪贴板/浏览器/桌面/OCR/微信/输入法/宏/守护，逐项标 Windows/Linux/macOS）＋「未实测」明确区分；
+「依赖 Windows 专有库的模块」清单由 `scripts/gen_platform_doc.py` **扫描生成**（当前 30 个），`--check` 进 CI；
+`uiu doctor` 新增 `platform/degraded`（非 Windows 上列出不可用能力）。README 增加平台矩阵入口。
 
 ### 7.5 分发链路未端到端验证 — 重要
 **现状**：PyPI 0.1.7 可装 ✅；npm 壳（`npm/`）**没有跑通过真实 `npm install`**，且版本号停在 0.1.5。

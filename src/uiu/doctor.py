@@ -234,6 +234,20 @@ def _chk_optional_deps(root: Path) -> list[Finding]:
     return out
 
 
+def _chk_platform(root: Path) -> list[Finding]:
+    """非 Windows 上明确列出不可用能力（审计 §7.4）。"""
+    import sys as _sys
+    if _sys.platform == "win32":
+        return []
+    return [Finding(
+        "platform/degraded", "warning",
+        f"当前平台 {_sys.platform} 不是 Windows：桌面控制 / 屏幕 OCR / 微信闭环 / 输入法 / "
+        f"宏录制回放 / 开机自启不可用（工具仍注册，调用时会提前返回）",
+        fix_hint="这些能力建立在 Win32 API 上；完整能力请在 Windows 上运行。"
+                 "矩阵见 docs/platform-support.md",
+        can_fix=False)]
+
+
 def _env_file_value(root: Path, key: str) -> str:
     try:
         return C.parse_env_file(root / ".env").get(key, "")
@@ -245,8 +259,8 @@ def _env_file_value(root: Path, key: str) -> str:
 
 def _all_checks(root: Path) -> list[Finding]:
     out: list[Finding] = []
-    for fn in (_chk_env, _chk_workspace, _chk_config_yaml, _chk_model, _chk_env_file,
-               _chk_channels, _chk_optional_deps):
+    for fn in (_chk_env, _chk_platform, _chk_workspace, _chk_config_yaml, _chk_model,
+               _chk_env_file, _chk_channels, _chk_optional_deps):
         try:
             out.extend(fn(root) or [])
         except Exception:

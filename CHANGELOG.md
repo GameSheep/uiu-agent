@@ -12,6 +12,11 @@
 - **网关默认鉴权**：默认只绑 `127.0.0.1`；无 `UIU_GATEWAY_TOKEN` 时拒绝非本机监听（需显式
   `UIU_GATEWAY_INSECURE=1` 才放行并告警）；新增 `uiu serve --host`；通用 webhook 的 secret 改为必填；
   `uiu doctor` 新增可自动修复的 `channel/gateway-no-token`。
+- **平台支持矩阵**：新增 `docs/platform-support.md`（Windows 一等公民；能力逐项标注，未验证的写「未实测」）；
+  「依赖 Windows 专有库的模块」清单由 `scripts/gen_platform_doc.py` 扫描生成并进 CI 校验；
+  `uiu doctor` 在非 Windows 上会提示 `platform/degraded`。
+- **真 LLM 端到端测试**：`tests/test_e2e_live_llm.py`（pytest 标记 `live`）验证「模型→工具→守卫→审计」
+  整条链路；默认跳过，需 `UIU_E2E_LIVE=1` + 可用 key 才跑（CI 不会误触发）。
 - **文档**：新增 `docs/architecture.md`（分层/进程模型/数据流/写入约定/安全模型）、
   `docs/tools.md`（由 `scripts/gen_tools_doc.py` 从注册表生成，CI 校验新鲜度）、
   `docs/gateway-api.md`（端点/鉴权矩阵/回调/返回约定）、`docs/troubleshooting.md`（按症状排查）；

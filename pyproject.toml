@@ -120,6 +120,9 @@ include = ["uiu*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+markers = [
+    "live: 需要真实 LLM key 的端到端测试（默认跳过；UIU_E2E_LIVE=1 + 有 key 才跑）",
+]
 # 覆盖率用显式命令行开启（pytest-cov），默认不拖慢日常跑测：
 #   pytest --cov=uiu --cov-report=term-missing --cov-fail-under=30
 

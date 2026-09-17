@@ -21,6 +21,7 @@
 | 文档 | 内容 |
 |---|---|
 | [docs/architecture.md](docs/architecture.md) | 分层、进程模型、一次对话的数据流、状态文件与写入约定、安全模型 |
+| [docs/platform-support.md](docs/platform-support.md) | 平台支持矩阵（Windows 一等公民；哪些能力在 Linux/macOS 不可用） |
 | [docs/tools.md](docs/tools.md) | **123 个内置工具**参考（自动生成） |
 | [docs/gateway-api.md](docs/gateway-api.md) | 网关端点、鉴权矩阵、各平台回调、返回约定 |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | 按症状排查（启动/密钥/权限/数据/环境） |

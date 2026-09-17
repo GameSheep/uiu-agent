@@ -29,6 +29,9 @@ See @README.md for project overview and @package.json for available npm/pnpm com
 - 覆盖率（需先 `pip install -e ".[test]"`，CI 会跑并卡门槛）：
   `.venv\Scripts\python.exe -m pytest tests -q --cov=uiu --cov-report=term-missing --cov-fail-under=50`
   基线 50（2026-09-17 实测 53.5%）。只保证不回退；新增代码请自带测试，阈值随轮次抬高。
+- 真 LLM 端到端（**默认跳过**，会真实花钱）：设 `UIU_E2E_LIVE=1` 后
+  `.venv\Scripts\python.exe -m pytest tests/test_e2e_live_llm.py -q -m live`；
+  验证的是「模型→工具→守卫→审计」整条链路，没有 key 或没开开关都会 skip。
 - 界面预览：`.venv\Scripts\python.exe scripts/tui_preview.py`（11 个状态 → `docs/preview/`）；
   界面导览见 `docs/tui-tour.md`。
 

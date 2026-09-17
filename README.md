@@ -16,6 +16,14 @@
 - **完整 CLI**：配置模型（34 provider）、加 skill、加 channel（Telegram/飞书/企微/钉钉/Discord/Slack）、更新代码。
 - **可发布到 PyPI**：`uiu publish` 一行构建 + 上传，全世界 `pip install uiu`。
 
+## 语言支持
+
+**当前只支持简体中文**：界面文案、CLI 提示、错误信息、文档全部是中文，没有 gettext/i18n 层。
+`--json` 输出的**键**是英文且稳定（`ok` / `command` / `data` / `error`），脚本不受文案改动影响。
+
+这是一个明确的产品决策，而不是「还没来得及翻译」：与其做半套翻译，不如把中文写清楚。
+新增的用户可见提示必须是中文，有测试盯着（`tests/test_language_policy.py`）。
+
 ## 文档索引
 
 | 文档 | 内容 |

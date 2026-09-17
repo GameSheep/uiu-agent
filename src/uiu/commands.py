@@ -67,9 +67,9 @@ def cmd_init(args) -> int:
     cfg = load_config(ws)
     if not config_yaml_path(ws).exists():
         save_config(ws, cfg)
-        _print_ok(f"created {ws}")
+        _print_ok(f"已创建 {ws}")
     else:
-        _print_ok(f"workspace already exists: {ws}")
+        _print_ok(f"workspace 已存在: {ws}")
 
     # Browser Use 的 Playwright 浏览器改为后台静默安装（不阻塞 init），失败不影响使用
     _setup_playwright_browsers_async()
@@ -209,12 +209,12 @@ def cmd_model(args) -> int:
         existing[key] = args.set_api_key
         write_env_file(env_path, existing)
         os.environ[key] = args.set_api_key
-        _print_ok(f"wrote key to {env_path}")
+        _print_ok(f"已写入密钥到 {env_path}")
         return 0
 
     if changed:
         save_config(ws, cfg)
-        _print_ok(f"model updated -> {m.provider}/{m.model}")
+        _print_ok(f"模型已更新 → {m.provider}/{m.model}")
         return 0
 
     # --- interactive wizard ---
@@ -465,20 +465,20 @@ def cmd_config(args) -> int:
         existing[key] = args.api_key
         write_env_file(env_path, existing)
         os.environ[key] = args.api_key  # 立即生效
-        _print_ok(f"wrote {key} to {env_path}")
+        _print_ok(f"已写入 {key} 到 {env_path}")
         return 0
 
     if args.set_secret:
         key, _, value = args.set_secret.partition("=")
         if not value:
-            _print_err("format: KEY=VALUE")
+            _print_err("格式: KEY=VALUE")
             return 2
         env_path = ws / ".env"
         existing = parse_env_file(env_path)
         existing[key.strip()] = value
         write_env_file(env_path, existing)
         os.environ[key.strip()] = value  # 立即生效
-        _print_ok(f"set {key.strip()} in {env_path}")
+        _print_ok(f"已设置 {key.strip()} 到 {env_path}")
         return 0
 
     if args.unset_secret:
@@ -489,7 +489,7 @@ def cmd_config(args) -> int:
             # overwrite=True so removed keys stay removed (write_env_file merges otherwise)
             write_env_file(env_path, existing, overwrite=True)
             os.environ.pop(args.unset_secret, None)
-            _print_ok(f"unset {args.unset_secret}")
+            _print_ok(f"已清除 {args.unset_secret}")
         return 0
 
     if args.list:
@@ -595,7 +595,7 @@ def cmd_skills(args) -> int:
         name = args.name
         target = skills_dir / name
         if target.exists():
-            _print_err(f"skill already exists: {target}")
+            _print_err(f"技能已存在: {target}")
             return 2
         template = (
             f"---\nname: {name}\ndescription: TODO: describe when to use this skill.\n---\n\n"
@@ -610,20 +610,20 @@ def cmd_skills(args) -> int:
         )
         target.mkdir(parents=True, exist_ok=True)
         (target / "SKILL.md").write_text(template, encoding="utf-8")
-        _print_ok(f"created {target / 'SKILL.md'}")
+        _print_ok(f"已创建 {target / 'SKILL.md'}")
         print("edit it, then it'll be picked up on next `uiu` start")
         return 0
 
     if args.action == "edit":
         target = skills_dir / args.name / "SKILL.md"
         if not target.exists():
-            _print_err(f"no such skill: {args.name}")
+            _print_err(f"没有这个技能: {args.name}")
             return 2
         editor = os.environ.get("EDITOR", "notepad" if os.name == "nt" else "vi")
         try:
             subprocess.run([editor, str(target)], check=False)
         except FileNotFoundError:
-            _print_err(f"editor '{editor}' not found; set $EDITOR")
+            _print_err(f"找不到编辑器 '{editor}'，请设置 $EDITOR")
             return 2
         return 0
 
@@ -653,7 +653,7 @@ def cmd_channel(args) -> int:
     if args.action == "add":
         name = args.name
         if cfg.channel(name):
-            _print_err(f"channel name already exists: {name}")
+            _print_err(f"渠道名已存在: {name}")
             return 2
         ctype = args.type
         secret_env = args.secret_env or _default_secret_env(ctype)
@@ -665,7 +665,7 @@ def cmd_channel(args) -> int:
             options=options,
         ))
         save_config(ws, cfg)
-        _print_ok(f"added channel '{name}' [{ctype}]")
+        _print_ok(f"已添加渠道 '{name}' [{ctype}]")
         if ctype == "telegram":
             if not os.environ.get(secret_env) and not parse_env_file(ws / ".env").get(secret_env):
                 print(f"  next: uiu config --set-secret {secret_env}=<token>")
@@ -698,11 +698,11 @@ def cmd_channel(args) -> int:
     if args.action == "enable" or args.action == "disable":
         c = cfg.channel(args.name)
         if not c:
-            _print_err(f"unknown channel: {args.name}")
+            _print_err(f"未知渠道: {args.name}")
             return 2
         c.enabled = (args.action == "enable")
         save_config(ws, cfg)
-        _print_ok(f"{args.action}d {args.name}")
+        _print_ok(f"已{{'启用' if args.action == 'enable' else '停用'}} {args.name}")
         return 0
 
     if args.action == "remove":
@@ -723,18 +723,18 @@ def cmd_channel(args) -> int:
     if args.action == "test":
         c = cfg.channel(args.name)
         if not c:
-            _print_err(f"unknown channel: {args.name}")
+            _print_err(f"未知渠道: {args.name}")
             return 2
         token = c.resolved_token()
         if not token:
-            _print_err(f"{c.secret_env} not set in .env or env. run: uiu config --set-secret {c.secret_env}=...")
+            _print_err(f"{c.secret_env} 未设置（.env 或环境变量）；可运行: uiu config --set-secret {c.secret_env}=...")
             return 2
         # dispatch to adapter
         try:
             from . import channels
             ok, msg = channels.test(c)
         except Exception as e:
-            _print_err(f"test failed: {type(e).__name__}: {e}")
+            _print_err(f"测试失败: {type(e).__name__}: {e}")
             return 1
         print(msg)
         return 0 if ok else 1
@@ -858,7 +858,7 @@ def _update_default_skills(ws: Path) -> int:
             continue
         shutil.copytree(str(entry), str(dest))
         copied += 1
-    _print_ok(f"synced {copied} default skill(s) into {target}")
+    _print_ok(f"已同步 {copied} 个内置技能到 {target}")
     return 0
 
 
@@ -912,7 +912,7 @@ def cmd_plugins(args) -> int:
         name = args.name
         d = _plugins_dir() / name
         if d.exists():
-            _print_err(f"plugin already exists: {d}")
+            _print_err(f"插件已存在: {d}")
             return 2
         d.mkdir(parents=True, exist_ok=True)
         safe = name.replace("-", "_")
@@ -951,7 +951,7 @@ author: you
 """,
             encoding="utf-8",
         )
-        _print_ok(f"created plugin: {d}")
+        _print_ok(f"已创建插件: {d}")
         print("  edit __init__.py, then run `uiu model` to see it")
         return 0
 
@@ -995,14 +995,14 @@ def cmd_publish(args) -> int:
     # version-consistency gate (v1.0 release discipline)
     ok, ver = _verify_version_consistency()
     if not ok:
-        _print_err(f"publish blocked: {ver}")
+        _print_err(f"发布被拦下: {ver}")
         print("  fix version mismatch, then retry")
         return 2
     print(f"· version consistency ok ({ver})")
 
     token = args.token or os.environ.get("PYPI_TOKEN") or os.environ.get("TWINE_PASSWORD")
     if not token and not dry_run:
-        _print_err("no PyPI token. Set PYPI_TOKEN env var or pass --token <token>.")
+        _print_err("没有 PyPI token：设置 PYPI_TOKEN 环境变量，或用 --token <token> 传入")
         print("  create one at https://pypi.org/manage/account/token/")
         return 2
 
@@ -1015,19 +1015,19 @@ def cmd_publish(args) -> int:
             check=False,
         )
         if rc.returncode != 0:
-            _print_err("pip install build/twine failed")
+            _print_err("安装构建依赖 build/twine 失败")
             return 1
     with step("构建 sdist + wheel"):
         rc = subprocess.run([sys.executable, "-m", "build", "--sdist", "--wheel"], check=False)
         if rc.returncode != 0:
-            _print_err("build failed — fix errors above, then retry")
+            _print_err("构建失败 —— 先修上面的错误再重试")
             return 1
 
     # inspect built artifacts (ensure default workspace/skills packaged)
     dist_dir = Path("dist")
     wheels = sorted(dist_dir.glob("*.whl"))
     if not wheels:
-        _print_err("no wheel produced in dist/")
+        _print_err("dist/ 里没有产出 wheel")
         return 1
     wheel = wheels[-1]
     print(f"· built {wheel.name}")
@@ -1058,7 +1058,7 @@ def cmd_publish(args) -> int:
     dist_dir = Path("dist")
     artifacts = sorted(dist_dir.glob(f"*{ver}*.whl")) + sorted(dist_dir.glob(f"*{ver}*.tar.gz"))
     if not artifacts:
-        _print_err("no artifacts found in dist/")
+        _print_err("dist/ 里没有构建产物")
         return 1
     upload_env = {
         **os.environ,
@@ -1083,7 +1083,7 @@ def cmd_publish(args) -> int:
         check=False,
     )
     if rc.returncode != 0:
-        _print_err("upload failed — fix errors above, then retry")
+        _print_err("上传失败 —— 先修上面的错误再重试")
         return 1
 
     if args.test:
@@ -1122,7 +1122,7 @@ def cmd_cron(args) -> int:
             _print_err(str(e))
             return 2
         kind = "shell 命令" if job.get("run_shell") else "agent 任务"
-        _print_ok(f"added {job['id']} ({args.name} @ {args.schedule} · {kind})")
+        _print_ok(f"已添加 {job['id']}（{args.name} @ {args.schedule}）")
         print("  serve 运行时每 60s 自动 tick；手动跑: uiu cron run", args.name)
         return 0
 
@@ -1138,28 +1138,28 @@ def cmd_cron(args) -> int:
                     pass
             _print_ok(f"removed {args.name}（已移入回收站，uiu trash 可恢复）")
             return 0
-        _print_err(f"no such job: {args.name}")
+        _print_err(f"没有这个定时任务: {args.name}")
         return 2
 
     if action in ("enable", "disable"):
         if _cron.set_enabled(ws, args.name, action == "enable"):
-            _print_ok(f"{action}d {args.name}")
+            _print_ok(f"{args.name} 已{{'启用' if action == 'enable' else '停用'}}")
             return 0
-        _print_err(f"no such job: {args.name}")
+        _print_err(f"没有这个定时任务: {args.name}")
         return 2
 
     if action == "run":
         jobs = [j for j in _cron.load_jobs(ws) if j["id"] == args.name or j["name"] == args.name]
         if not jobs:
-            _print_err(f"no such job: {args.name}")
+            _print_err(f"没有这个定时任务: {args.name}")
             return 2
         out = _cron.run_job(ws, jobs[0])
-        _print_ok(f"ran → {out}")
+        _print_ok(f"已执行 → {out}")
         return 0
 
     if action == "tick":
         ran = _cron.tick(ws)
-        _print_ok(f"tick: {len(ran)} job(s) ran")
+        _print_ok(f"tick: 执行了 {len(ran)} 个任务")
         for out in ran:
             print(f"  {out}")
         return 0
@@ -1271,7 +1271,7 @@ def cmd_sessions(args) -> int:
     if action == "show":
         msgs = _sessions.load_session(ws, args.name)
         if msgs is None:
-            _print_err(f"no such session: {args.name}")
+            _print_err(f"没有这个会话: {args.name}")
             return 2
         for m in msgs[-20:]:
             role = m.get("role", "?")
@@ -1293,9 +1293,9 @@ def cmd_sessions(args) -> int:
 
     if action == "remove":
         if _sessions.remove_session(ws, args.name):
-            _print_ok(f"removed {args.name}")
+            _print_ok(f"已删除 {args.name}")
             return 0
-        _print_err(f"no such session: {args.name}")
+        _print_err(f"没有这个会话: {args.name}")
         return 2
 
     return 2

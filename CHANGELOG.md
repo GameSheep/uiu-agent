@@ -12,6 +12,9 @@
 - **网关默认鉴权**：默认只绑 `127.0.0.1`；无 `UIU_GATEWAY_TOKEN` 时拒绝非本机监听（需显式
   `UIU_GATEWAY_INSECURE=1` 才放行并告警）；新增 `uiu serve --host`；通用 webhook 的 secret 改为必填；
   `uiu doctor` 新增可自动修复的 `channel/gateway-no-token`。
+- **语言策略（决策：仅简体中文）**：README 明写语言边界；把 `commands.py` 里 39 处英文用户提示
+  统一成中文；新增测试保证「面向用户的反馈必须是中文」，而 `--json` 信封的键保持英文且稳定。
+  明确不做 gettext/i18n 层（成本与收益不匹配）。
 - **CLI 可脚本化**：新增全局 `--json`（`uiu --json sessions usage`），约定 stdout 只有一个 JSON
   文档（`{"ok","command","data"}`，失败带 `error`），进度/提示走 stderr，退出码语义不变；
   `sessions` / `trash` / `backup` / `audit` / `doctor` 已支持。

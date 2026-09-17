@@ -9,3 +9,4 @@ model:
   api_key_env: DEEPSEEK_API_KEY
 channels: []
 mcp_servers: []
+schema: 1

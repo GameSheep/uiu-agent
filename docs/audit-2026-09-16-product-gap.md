@@ -40,6 +40,7 @@
 | P0-4 依赖声明修正 | ✅ 完成 | playwright→`[browser]`；uiautomation→`[desktop]`；补齐 numpy/opencv-python（核心）、websockets（browser）、scipy/sounddevice/SpeechRecognition/openai-whisper（voice）；新增扫描测试保证「src 里每个第三方 import 都被声明」；8 个原本在门外的测试模块现在可收集（2 处真实修复 + 显式 skip） |
 | P0-5 错误契约 | ✅ 完成 | `uiu config --list` 遇到坏 config.yaml 现在 stderr + rc=2；`test_broken_config_never_reports_success` 同时锁定 show/config/doctor 三者 |
 | P0-6 日志体系 | ✅ 完成 | 新增 `src/uiu/log.py`（分级 + `RotatingFileHandler` 5MB×3 + workspace 落盘 + 失败降级）；daemon 手写 append 改为结构化日志；gateway 启动/绑定/鉴权/agent 异常/发送失败/定时任务全部落盘；cron 任务开始-结束-异常落盘；损坏文件备份与 config 解析失败落盘；TUI 启动接上日志。测试：`tests/test_logging.py`（9 个，含轮转、级别、密钥不入日志、日志目录不可用时不崩） |
+| P2-15 doctor 覆盖依赖检查 | ✅ 完成 | `_chk_optional_deps` 表驱动体检 5 个可选栈（browser / desktop-uia / voice-tts / voice-stt / rag），给出**可执行的安装命令**；装包需显式 `--fix --install-deps`（默认 `--fix` 不碰 pip——可选栈动辄上百 MB，不该被顺手装上）；缺 `textual`（核心）报 error；UIA 检查只在 Windows 上触发；可选栈缺失为 **info 级**、不影响退出码。测试：`tests/test_doctor_deps.py`（11） |
 | P2-13 破坏性操作可撤销 | ✅ 完成 | `trash.py`（文件类/记录类两种条目、拒绝覆盖、按天清理）+ `uiu trash`；会话/宏/渠道/定时任务删除全部软删除；TUI `Ctrl+Z` 撤销。测试：`tests/test_trash.py`（12） |
 | P1-12 真 LLM 最小 E2E + 平台支持矩阵 | ✅ 完成 | `tests/test_e2e_live_llm.py`（`live` 标记，默认跳过，验证「模型→工具→守卫→审计」整条链路，已证明非静默跳过）；`docs/platform-support.md`（能力矩阵 + 30 个 Windows 专有模块**扫描生成** + `--check`）；doctor 增 `platform/degraded`。测试：`tests/test_platform_support.py`（6） |
 | P1-10 架构/工具/网关 API 文档 | ✅ 完成 | 新增 `docs/architecture.md`（分层/进程模型/数据流/状态与写入约定/安全模型）、`docs/tools.md`（**生成物**，123 工具按模块分组 + 参数 + 需确认标记 + `--check`）、`docs/gateway-api.md`（端点表/鉴权矩阵/回调样例/返回约定）、`docs/troubleshooting.md`；README 加文档索引并修掉三处假数字。测试：`tests/test_docs_sync.py`（12） |
@@ -358,7 +359,7 @@ source/omit/exclude；CI 增加 `--cov=uiu --cov-report=term-missing --cov-fail-
 ### P2 — 体验与长期健康
 13. 破坏性操作可撤销（4.1）
 14. i18n 决策（要么明确仅中文，要么引入最小 i18n）（1.5）
-15. doctor 覆盖依赖/环境/鉴权状态（1.x/5.1）
+15. doctor 覆盖依赖/环境/鉴权状态（1.x/5.1）—— ✅ round 12：可选栈体检 + `--fix` 安装、缺 textual 报 error、`channel/gateway-no-token` 可自动修、`platform/degraded` 提示平台限制
 16. CLI 进度反馈与 `--json`（1.4/4.3）
 17. 会话生命周期与空间管理（3.5）
 

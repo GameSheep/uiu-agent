@@ -570,6 +570,18 @@ uiu sessions search <关键词>   # 跨会话关键词检索（免费秒回）
 uiu sessions remove <名>
 ```
 
+### `doctor`
+
+自检 + 自动修复。可选能力栈缺失（浏览器 / 桌面 UIA / 语音 / RAG）以 **info** 列出并给出安装命令，
+但**默认不会替你装**（那些包动辄上百 MB）：
+
+```bash
+uiu doctor --lint                        # 只看不改（rc=1 仅当有 error 级问题）
+uiu doctor --fix                         # 逐项确认后修复（不碰 pip）
+uiu doctor --fix --yes                   # 全部自动修
+uiu doctor --fix --yes --install-deps    # 连缺失的可选依赖也一起装
+```
+
 ### `trash`（回收站 / 撤销）
 
 删除会话、宏、渠道、定时任务**都是可撤销的**：它们先进回收站，默认保留 7 天（daemon 每天清理）。

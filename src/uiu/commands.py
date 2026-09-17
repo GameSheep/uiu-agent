@@ -1221,7 +1221,8 @@ def cmd_doctor(args) -> int:
     ws = _workspace(args)
     return run_doctor(ws, lint=getattr(args, "lint", False),
                       fix=getattr(args, "fix", False),
-                      yes=getattr(args, "yes", False))
+                      yes=getattr(args, "yes", False),
+                      install_deps=getattr(args, "install_deps", False))
 
 
 # ---------- macro (keyboard-macro style record/play) ----------

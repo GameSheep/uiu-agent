@@ -217,20 +217,60 @@ def _chk_channels(root: Path) -> list[Finding]:
     return out
 
 
+# 可选能力栈：缺依赖时相关工具会在调用时报错，用户往往一头雾水。
+# 这里统一体检并给出**可直接执行的安装命令**（info 级：不影响退出码）。
+_OPTIONAL_STACKS: tuple[tuple[str, str, tuple[str, ...], str], ...] = (
+    ("browser", "browser", ("playwright", "browser_use"),
+     "浏览器接管 / AI 浏览器"),
+    ("desktop-uia", "desktop", ("uiautomation",),
+     "UIA 控件定位（Windows 可访问性）"),
+    ("voice-tts", "voice", ("edge_tts", "pyttsx3"),
+     "语音播报（TTS）"),
+    ("voice-stt", "voice", ("sounddevice", "speech_recognition"),
+     "语音输入（STT）"),
+    ("rag", "rag", ("chromadb", "sentence_transformers"),
+     "本地向量记忆（RAG）"),
+)
+
+
+def _module_missing(name: str) -> bool:
+    """单独抽出来是为了可测（测试里 monkeypatch 它，避免真的看环境）。"""
+    import importlib.util as _ilu
+    try:
+        return _ilu.find_spec(name) is None
+    except (ImportError, ValueError):
+        return True
+
+
 def _chk_optional_deps(root: Path) -> list[Finding]:
-    """Optional extras present in config but dependency missing."""
+    """可选能力栈的依赖体检 + MCP 配置一致性。"""
     try:
         cfg = C.load_config(root)
     except Exception:
         return []
-    out = []
-    if cfg.mcp_servers:
-        try:
-            import mcp  # noqa: F401
-        except ImportError:
-            out.append(Finding("deps/mcp-missing", "warning",
-                               "配置了 MCP 服务器但缺 mcp 包",
-                               fix_hint="pip install 'uiu[mcp]'", can_fix=False))
+
+    out: list[Finding] = []
+    for stack, extra, modules, label in _OPTIONAL_STACKS:
+        if stack == "desktop-uia" and sys.platform != "win32":
+            continue                    # 非 Windows 上装不了，platform/degraded 已经说过
+        missing = [m for m in modules if _module_missing(m)]
+        if missing:
+            out.append(Finding(
+                f"deps/{stack}-missing", "info",
+                f"{label} 不可用：缺 {', '.join(missing)}",
+                fix_hint=f"pip install 'uiu[{extra}]'（--fix 可直接装）",
+                path=", ".join(missing), can_fix=True))
+
+    if cfg.mcp_servers and _module_missing("mcp"):
+        out.append(Finding("deps/mcp-missing", "warning",
+                           "配置了 MCP 服务器但缺 mcp 包",
+                           fix_hint="pip install 'uiu[mcp]'（--fix 可直接装）",
+                           path="mcp", can_fix=True))
+
+    if _module_missing("textual"):
+        out.append(Finding("deps/textual-missing", "error",
+                           "缺少 textual —— 全屏 TUI 无法启动（属于核心依赖，疑似安装不完整）",
+                           fix_hint="pip install -e . 或 pip install 'uiu'", can_fix=False))
     return out
 
 
@@ -246,6 +286,38 @@ def _chk_platform(root: Path) -> list[Finding]:
         fix_hint="这些能力建立在 Win32 API 上；完整能力请在 Windows 上运行。"
                  "矩阵见 docs/platform-support.md",
         can_fix=False)]
+
+
+def _extra_for_dep_finding(finding_id: str) -> str | None:
+    """把 deps/<stack>-missing 映射回 pip extra 名。"""
+    for stack, extra, _modules, _label in _OPTIONAL_STACKS:
+        if finding_id == f"deps/{stack}-missing":
+            return extra
+    if finding_id == "deps/mcp-missing":
+        return "mcp"
+    return None
+
+
+def _run_pip(cmd: list[str]):
+    """单独一层间接，方便测试替换（不去 monkeypatch 全局 subprocess）。"""
+    import subprocess
+    return subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+
+
+def _pip_install_extra(extra: str) -> tuple[bool, str]:
+    """--fix 的真动作：装对应的 extras（网络/索引不可用时会失败并如实报告）。"""
+    cmd = [sys.executable, "-m", "pip", "install",
+           "--disable-pip-version-check", f"uiu[{extra}]"]
+    try:
+        proc = _run_pip(cmd)
+    except Exception as exc:                     # noqa: BLE001
+        return False, f"{type(exc).__name__}: {exc}"
+    if proc.returncode == 0:
+        tail = " / ".join((proc.stdout or "").strip().splitlines()[-2:])
+        return True, f"已安装 uiu[{extra}]" + (f"（{tail[:100]}）" if tail else "")
+    err = " / ".join(((proc.stderr or proc.stdout or "").strip().splitlines()[-2:]))
+    return False, (f"pip 安装失败 rc={proc.returncode}: {err[:160]}"
+                   f"（可手动执行: {' '.join(cmd)}）")
 
 
 def _env_file_value(root: Path, key: str) -> str:
@@ -296,6 +368,9 @@ def _fix_one(root: Path, finding: Finding) -> tuple[bool, str]:
         if finding.id == "env/dotenv-missing":
             C.ensure_workspace(root)
             return True, "已创建 .env 模板"
+        dep_extra = _extra_for_dep_finding(finding.id)
+        if dep_extra:
+            return _pip_install_extra(dep_extra)
         if finding.id == "channel/gateway-no-token":
             import secrets as _secrets
             env_path = root / ".env"
@@ -352,8 +427,12 @@ def _render(items: list[Finding]) -> str:
 # ---------- CLI entry ----------
 
 def run_doctor(workspace: Path, lint: bool = False, fix: bool = False,
-               yes: bool = False, out=print) -> int:
-    """Doctor entry. Returns exit code (0 clean, 1 findings, 2 runtime error)."""
+               yes: bool = False, install_deps: bool = False, out=print) -> int:
+    """Doctor entry. Returns exit code (0 clean, 1 findings, 2 runtime error).
+
+    install_deps=False 时**绝不**执行 pip：可选栈动辄几十上百 MB（playwright 还要拖 chromium），
+    不该被 `--fix --yes` 顺手装上。要装必须显式 `--install-deps`。
+    """
     items = _all_checks(workspace)
     errs = [f for f in items if f.severity == "error"]
     warns = [f for f in items if f.severity == "warning"]
@@ -373,7 +452,12 @@ def run_doctor(workspace: Path, lint: bool = False, fix: bool = False,
         return 1 if errs or warns else 0
 
     # fix mode: 逐项确认（除非 --yes）
-    fixable = [f for f in items if f.can_fix]
+    dep_findings = [f for f in items if f.can_fix and f.id.startswith("deps/")]
+    fixable = [f for f in items if f.can_fix
+               and (install_deps or not f.id.startswith("deps/"))]
+    for f in dep_findings:
+        if not install_deps:
+            out(f"· 跳过 {f.id}（装可选依赖需显式 --install-deps）：{f.fix_hint}")
     if not fixable:
         out("(没有可自动修复的项)")
         return 1 if errs else 0

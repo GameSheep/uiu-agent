@@ -12,6 +12,10 @@
 - **网关默认鉴权**：默认只绑 `127.0.0.1`；无 `UIU_GATEWAY_TOKEN` 时拒绝非本机监听（需显式
   `UIU_GATEWAY_INSECURE=1` 才放行并告警）；新增 `uiu serve --host`；通用 webhook 的 secret 改为必填；
   `uiu doctor` 新增可自动修复的 `channel/gateway-no-token`。
+- **doctor 依赖体检**：`uiu doctor` 会列出可选能力栈缺失（browser / desktop-uia / voice-tts /
+  voice-stt / rag），给出可直接复制的安装命令；**`--fix --install-deps` 才会真的执行安装**
+  （默认 `--fix` 不动 pip：playwright/chromadb 这类动辄上百 MB，不该被顺手装上）；
+  可选栈缺失是 info 级、不影响退出码；缺核心依赖（textual）报 error。
 - **删除可撤销（回收站）**：新增 `uiu trash [--restore/--purge]`；删会话/宏/渠道/定时任务都先进
   `<workspace>/.trash/`（默认留 7 天，daemon 每日清理），恢复拒绝覆盖已有文件；TUI 里 **Ctrl+Z** 撤销。
 - **平台支持矩阵**：新增 `docs/platform-support.md`（Windows 一等公民；能力逐项标注，未验证的写「未实测」）；

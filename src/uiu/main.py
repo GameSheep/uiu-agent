@@ -221,6 +221,8 @@ def _build_parser() -> argparse.ArgumentParser:
     pdoc.add_argument("--lint", action="store_true", help="read-only check, no fixes")
     pdoc.add_argument("--fix", action="store_true", help="apply auto-fixes (prompts per item)")
     pdoc.add_argument("--yes", action="store_true", help="with --fix: apply all without prompting")
+    pdoc.add_argument("--install-deps", action="store_true",
+                      help="with --fix: really pip install missing optional extras (off by default)")
 
     # trash（回收站，审计 §4.1）
     ptr = sub.add_parser("trash", help="recycle bin: list / restore / purge deleted items")

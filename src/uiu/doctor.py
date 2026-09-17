@@ -202,6 +202,18 @@ def _chk_channels(root: Path) -> list[Finding]:
                                f"channel '{c.name}' 未设置 token（{c.secret_env}）",
                                fix_hint=f"uiu config --set-secret {c.secret_env}=...",
                                path=c.secret_env, can_fix=False))
+    # 网关鉴权：启用了 channel 就会起 webhook 端口。没有 token 时网关只绑本机
+    # （安全默认），但用户通常是想对外接回调的 —— 提前说清楚，并支持 --fix 生成 token。
+    enabled = [c for c in cfg.channels if getattr(c, "enabled", True)]
+    if enabled and not (os.environ.get("UIU_GATEWAY_TOKEN", "")
+                        or _env_file_value(root, "UIU_GATEWAY_TOKEN")):
+        out.append(Finding(
+            "channel/gateway-no-token", "warning",
+            f"已启用 {len(enabled)} 个 channel 但未设置 UIU_GATEWAY_TOKEN："
+            f"网关只会监听 127.0.0.1（要对外接回调必须先有 token）",
+            fix_hint="uiu doctor --fix 会生成随机 token 写入 .env，"
+                     "或 uiu config --set-secret UIU_GATEWAY_TOKEN=<随机串>",
+            path="UIU_GATEWAY_TOKEN", can_fix=True))
     return out
 
 
@@ -270,6 +282,13 @@ def _fix_one(root: Path, finding: Finding) -> tuple[bool, str]:
         if finding.id == "env/dotenv-missing":
             C.ensure_workspace(root)
             return True, "已创建 .env 模板"
+        if finding.id == "channel/gateway-no-token":
+            import secrets as _secrets
+            env_path = root / ".env"
+            existing = C.parse_env_file(env_path)
+            existing["UIU_GATEWAY_TOKEN"] = _secrets.token_urlsafe(24)
+            C.write_env_file(env_path, existing)
+            return True, "已生成随机 UIU_GATEWAY_TOKEN 写入 .env（重启 serve 生效）"
         if finding.id == "tui/unknown-theme":
             from .app.theme import DEFAULT_THEME
             cfg = C.load_config(root)

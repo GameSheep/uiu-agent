@@ -34,7 +34,7 @@
 
 | 项 | 状态 | 证据 |
 |---|---|---|
-| P0-1 网关默认鉴权 | 待做 | — |
+| P0-1 网关默认鉴权 | ✅ 完成 | 默认只绑 127.0.0.1（此前硬编码 0.0.0.0）；非本机监听必须有 `UIU_GATEWAY_TOKEN`，否则启动即拒绝（`resolve_bind`），要例外必须显式 `UIU_GATEWAY_INSECURE=1`；新增 `--host`；通用 webhook 的 secret 从可选改为**必填**；启动打印鉴权状态；`uiu doctor` 新增 `channel/gateway-no-token`（可 `--fix` 生成随机 token）。测试：`tests/test_gateway_auth.py`（12 个，含真实 HTTP 401/secret 校验）+ doctor 2 个 |
 | P0-2 原子写 + 文件锁 | 待做 | — |
 | P0-3 LICENSE | ✅ 完成 | 新增 `LICENSE`（MIT / GameSheep）；pyproject 补 `authors`；`tests/test_packaging_contract.py::test_license_file_matches_metadata` |
 | P0-4 依赖声明修正 | ✅ 完成 | playwright→`[browser]`；uiautomation→`[desktop]`；补齐 numpy/opencv-python（核心）、websockets（browser）、scipy/sounddevice/SpeechRecognition/openai-whisper（voice）；新增扫描测试保证「src 里每个第三方 import 都被声明」；8 个原本在门外的测试模块现在可收集（2 处真实修复 + 显式 skip） |
@@ -169,6 +169,8 @@
 **证据**：`gateway.py:47-49` `UIU_GATEWAY_TOKEN` 为空即「不鉴权」；`gateway.py:316` 仅当 token 存在时才卡 `/api/*` 与 `/generic/*`；`channels_webhook.py:55` 未配 `secret` 时不校验。
 **影响**：能访问端口的人可向 agent 注入任意文本 → 结合本机工具（shell_exec/文件写/微信发送）= **远程代码执行与数据外泄**。默认监听与默认无鉴权叠加，属于必须在上线前解决的项。
 **建议**：默认绑 `127.0.0.1`；无 token 时拒绝启动对外监听（或强制生成随机 token 打印一次）；generic webhook 强制要求 secret；启动时打印「当前鉴权状态」并写入 doctor。
+
+**已修复（round 2）**：上述四条全部落地——默认 `127.0.0.1`；非本机 + 无 token 直接 `RuntimeError` 拒绝启动（显式 `UIU_GATEWAY_INSECURE=1` 才放行并警告）；generic webhook 无 secret 一律拒绝投递（`check()` 也标红）；启动打印「监听了哪里 + 鉴权状态」；`uiu doctor` 新增可自动修复的 `channel/gateway-no-token`。
 
 ### 5.2 路径防护是黑名单 — 重要
 **证据**：`_sandbox.py` 只黑名单 `C:\\Windows`、`Program Files`、`/etc`、`/root`… + 敏感文件名（`.env/.pem/.key/id_rsa`）+ 大小上限。

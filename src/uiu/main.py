@@ -155,6 +155,8 @@ def _build_parser() -> argparse.ArgumentParser:
     # serve (gateway)
     pserve = sub.add_parser("serve", help="start gateway: run all enabled channels (telegram/feishu/wecom)")
     pserve.add_argument("--port", type=int, default=8765, help="webhook port for feishu/wecom (default 8765)")
+    pserve.add_argument("--host", default="",
+                        help="bind address (default 127.0.0.1; 对外暴露前必须先设 UIU_GATEWAY_TOKEN)")
 
     # publish
     pp = sub.add_parser("publish", help="build & upload to PyPI")

@@ -208,3 +208,43 @@ def test_detect_env_bad_lines(tmp_cwd):
     (root / ".env").write_text("GOOD=1\nthis is not env line\n", encoding="utf-8")
     items = _all_checks(root)
     assert any(f.id == "env/dotenv-bad-lines" for f in items)
+
+
+def test_gateway_without_token_is_flagged_and_fixable(tmp_cwd, capsys):
+    """P0-1：启用 channel 却没网关 token → doctor 报警，--fix 自动生成 token。"""
+    from uiu import config as C
+    from uiu.doctor import run_doctor
+
+    ws = tmp_cwd / "workspace"
+    C.ensure_workspace(ws)
+    cfg = C.load_config(ws)
+    cfg.channels = [C.ChannelConfig(type="webhook", name="ext", enabled=True,
+                                    options={"secret": "s"})]
+    C.save_config(ws, cfg)
+
+    rc = run_doctor(ws, lint=True)
+    shown = capsys.readouterr()
+    assert "channel/gateway-no-token" in (shown.out + shown.err), shown.out
+    assert rc == 1, "warning 级问题应让 doctor 返回 1"
+
+    run_doctor(ws, fix=True, yes=True)
+    capsys.readouterr()
+    env = C.parse_env_file(ws / ".env")
+    assert env.get("UIU_GATEWAY_TOKEN"), "fix 必须写入 token"
+    assert len(env["UIU_GATEWAY_TOKEN"]) >= 20
+
+
+def test_gateway_token_present_is_clean(tmp_cwd):
+    from uiu import config as C
+    from uiu.doctor import _all_checks
+
+    ws = tmp_cwd / "workspace"
+    C.ensure_workspace(ws)
+    cfg = C.load_config(ws)
+    cfg.channels = [C.ChannelConfig(type="webhook", name="ext", enabled=True,
+                                    options={"secret": "s"})]
+    C.save_config(ws, cfg)
+    C.write_env_file(ws / ".env", {"UIU_GATEWAY_TOKEN": "x" * 32})
+
+    ids = [f.id for f in _all_checks(ws)]
+    assert "channel/gateway-no-token" not in ids, ids

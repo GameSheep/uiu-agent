@@ -19,12 +19,15 @@ def test_webhook_secret_and_digging():
     assert calls == [("u1", "hi")]
 
 
-def test_webhook_no_secret_open():
+def test_webhook_without_secret_is_rejected():
+    """P0-1：通用 webhook 会把 body 文本直接喂给 agent，没 secret 就是开放入口。"""
     from uiu.channels_webhook import WebhookAdapter
     calls = []
     ad = WebhookAdapter(_cfg("webhook"), on_message=lambda c, t: calls.append((c, t)))
-    assert ad.handle_webhook({"chat_id": "c", "text": "t"})["code"] == 0
-    assert calls == [("c", "t")]
+    result = ad.handle_webhook({"chat_id": "c", "text": "t"})
+    assert result["code"] == 1
+    assert "secret" in result["msg"]
+    assert calls == []
 
 
 def test_whatsapp_dispatch_and_noise_ignored():

@@ -861,7 +861,7 @@ def cmd_serve(args) -> int:
     from .workspace import load_workspace
     ws_obj = load_workspace(ws)
     gw = Gateway(cfg, ws_obj)
-    gw.run(port=args.port)
+    gw.run(port=args.port, host=getattr(args, "host", "") or "")
     return 0
 
 

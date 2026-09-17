@@ -27,6 +27,50 @@ from .llm import make_client
 from .workspace import Workspace, load_workspace
 
 
+# --------------------------------------------------------------------------
+# 绑定与鉴权策略
+# --------------------------------------------------------------------------
+# 网关能把任意入站文本喂给本机工具（shell / 文件写 / 微信发送），
+# 所以在没有鉴权的情况下暴露到非本机地址，等于把执行权交给能连上端口的人。
+# 策略：默认只绑 127.0.0.1；要对外监听必须显式提供 UIU_GATEWAY_TOKEN，
+# 或者显式承认风险（UIU_GATEWAY_INSECURE=1）。
+
+_LOOPBACK = {"127.0.0.1", "localhost", "::1", "0:0:0:0:0:0:0:1"}
+
+
+def _is_loopback(host: str) -> bool:
+    h = (host or "").strip().lower().strip("[]")
+    return h in _LOOPBACK or h.startswith("127.")
+
+
+def resolve_bind(host: str = "", token: str = "") -> tuple[str, list[str]]:
+    """Return (bind_host, warnings) or raise RuntimeError for an unsafe bind."""
+    import os as _os
+
+    chosen = (host or _os.environ.get("UIU_GATEWAY_HOST", "") or "127.0.0.1").strip() or "127.0.0.1"
+    insecure = _os.environ.get("UIU_GATEWAY_INSECURE", "").strip().lower() in ("1", "true", "yes", "on")
+    warnings: list[str] = []
+    if _is_loopback(chosen):
+        if not token:
+            warnings.append("未设置 UIU_GATEWAY_TOKEN —— 已只监听本机（安全默认）")
+        return chosen, warnings
+    if token:
+        return chosen, warnings
+    if insecure:
+        warnings.append(f"UIU_GATEWAY_INSECURE=1：{chosen} 对外监听且无鉴权，任何能连上端口的人都能驱动本机工具")
+        return chosen, warnings
+    raise RuntimeError(
+        f"拒绝在 {chosen} 上无鉴权启动网关。任选其一：\n"
+        f"  1) 设置网关 token（推荐）: uiu config --set-secret UIU_GATEWAY_TOKEN=<随机串>\n"
+        f"  2) 只监听本机: --host 127.0.0.1 或 UIU_GATEWAY_HOST=127.0.0.1\n"
+        f"  3) 明知风险仍要对外暴露: UIU_GATEWAY_INSECURE=1"
+    )
+
+
+def auth_status(token: str) -> str:
+    return "已启用（X-Gateway-Token）" if token else "未启用"
+
+
 class Gateway:
     MAX_SESSIONS = 500
     MAX_MESSAGE_CHARS = 20000
@@ -47,6 +91,7 @@ class Gateway:
         # 可选网关鉴权：设 UIU_GATEWAY_TOKEN 后 webhook 需带 X-Gateway-Token
         import os as _os
         self._gateway_token = _os.environ.get("UIU_GATEWAY_TOKEN", "")
+        self._bind_host = "127.0.0.1"
         try:
             from .delegation import set_context as _set_delegation_ctx
             _set_delegation_ctx(self.client, cfg.model, ws, self.tool_schemas)
@@ -186,7 +231,7 @@ class Gateway:
     def _origin_channel(self) -> dict[str, str]:
         return self._origin
 
-    def run(self, port: int = 8765) -> None:
+    def run(self, port: int = 8765, host: str = "") -> None:
         """Start all enabled channel adapters + webhook server, block forever."""
         enabled = [c for c in self.cfg.channels if c.enabled]
         if not enabled:
@@ -205,9 +250,9 @@ class Gateway:
         asyncio.set_event_loop(loop)
 
         http_server = None
-        feishu_wecom = [c for c in enabled if c.type in ("feishu", "wecom")]
+        feishu_wecom = [c for c in enabled if c.type in ("feishu", "wecom", "webhook")]
         if feishu_wecom:
-            http_server = self._start_http_server(port)
+            http_server = self._start_http_server(port, host)
 
         for c in enabled:
             adapter = channels.create_adapter(c, on_message=None)
@@ -257,7 +302,8 @@ class Gateway:
 
         try:
             if http_server:
-                print(f"[gateway] webhook 服务器: http://0.0.0.0:{port}  (飞书/企微回调指到这里)")
+                shown = self._bind_host if self._bind_host not in ("0.0.0.0", "") else "127.0.0.1"
+                print(f"[gateway] webhook 服务器: http://{shown}:{port}  (飞书/企微回调指到这里)")
             loop.run_forever()
         except KeyboardInterrupt:
             print("\n[gateway] 停止…")
@@ -270,8 +316,13 @@ class Gateway:
             loop.close()
             self._executor.shutdown(wait=False, cancel_futures=True)
 
-    def _start_http_server(self, port: int) -> ThreadingHTTPServer:
+    def _start_http_server(self, port: int, host: str = "") -> ThreadingHTTPServer:
         gate = self
+        bind_host, warnings = resolve_bind(host, self._gateway_token)
+        self._bind_host = bind_host
+        for warning in warnings:
+            print(f"[gateway] 警告: {warning}", file=sys.stderr, flush=True)
+        print(f"[gateway] 鉴权 {auth_status(self._gateway_token)} · 监听 {bind_host}:{port}", flush=True)
 
         class Handler(BaseHTTPRequestHandler):
             def log_message(self, fmt, *args):
@@ -392,7 +443,7 @@ class Gateway:
                 self.end_headers()
                 self.wfile.write(data)
 
-        server = ThreadingHTTPServer(("0.0.0.0", port), Handler)
+        server = ThreadingHTTPServer((bind_host, port), Handler)
         threading.Thread(target=server.serve_forever, daemon=True).start()
         return server
 

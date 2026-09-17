@@ -2,7 +2,7 @@
 
 网关路由：POST /generic/<channel名>，按 options 取字段：
   chat_field / text_field：body 中的 JSON 路径（点分隔，默认 chat_id / text）
-  secret：body.secret 或 ?secret= 须等于它（未设则由网关 UIU_GATEWAY_TOKEN 鉴权）
+  secret：必填，body.secret 或 ?secret= 须等于它（未配置则拒绝所有投递）
 
 示例：
   uiu channel add ext --type webhook -o secret=xxx -o chat_field=user.id -o text_field=message
@@ -38,7 +38,10 @@ class WebhookAdapter(BaseChannelAdapter):
         self.queue: asyncio.Queue = asyncio.Queue()
 
     def check(self) -> tuple[bool, str]:
-        return True, "✓ webhook 通道就绪（POST /generic/<name>）"
+        if not self.secret:
+            return False, ("✗ webhook 缺少 secret（等于开放投递口）："
+                           "uiu channel add <name> --type webhook -o secret=<随机串>")
+        return True, "✓ webhook 通道就绪（POST /generic/<name>，需 secret）"
 
     async def _listen(self) -> None:
         while self._running:
@@ -52,10 +55,15 @@ class WebhookAdapter(BaseChannelAdapter):
     def handle_webhook(self, body: dict, query_secret: str = "") -> dict:
         if not isinstance(body, dict):
             return {"code": 1, "msg": "bad body"}
-        if self.secret:
-            got = str(body.get("secret", "") or query_secret or "")
-            if not hmac.compare_digest(got, self.secret):
-                return {"code": 1, "msg": "invalid secret"}
+        # secret 必填：通用 webhook 的 body 文本会直接进 agent，
+        # 没有 secret 就是一个对外开放的「任意投递」入口。
+        if not self.secret:
+            return {"code": 1,
+                    "msg": "webhook secret 未配置（拒绝投递）："
+                           "uiu channel add <name> --type webhook -o secret=<随机串>"}
+        got = str(body.get("secret", "") or query_secret or "")
+        if not hmac.compare_digest(got, self.secret):
+            return {"code": 1, "msg": "invalid secret"}
         chat_id = str(_dig(body, self.chat_field))[:128]
         text = str(_dig(body, self.text_field))[:20000]
         if chat_id and text.strip() and self.on_message:

@@ -12,6 +12,11 @@
 - **网关默认鉴权**：默认只绑 `127.0.0.1`；无 `UIU_GATEWAY_TOKEN` 时拒绝非本机监听（需显式
   `UIU_GATEWAY_INSECURE=1` 才放行并告警）；新增 `uiu serve --host`；通用 webhook 的 secret 改为必填；
   `uiu doctor` 新增可自动修复的 `channel/gateway-no-token`。
+- **安全策略收紧**：路径改为三态决策（workspace/cwd/临时目录放行、越界需确认、凭据目录与系统目录拒绝）；
+  shell 命令按语义分类（只读放行，写/网络/进程/系统/包管理/解释器/未知命令一律需确认，破坏性命令拒绝）；
+  确认框显示完整命令与 cwd。
+- **审计日志**：`<workspace>/audit/uiu-audit.jsonl` 记录每次工具执行与每次确认（密钥字段脱敏、5MB 滚动），
+  新增 `uiu audit [--tail N] [--json]`。
 - **原子写 + 文件锁**：新增 `src/uiu/_atomic.py`（同目录临时文件 + fsync + os.replace；进程内 RLock +
   跨进程 OS 锁；锁内读-改-写；损坏文件备份为 `.corrupt-<ts>`），全部状态文件（sessions/config/.env/
   cron/记忆/建议/情景记忆/daemon pid）改走它；cron tick 的 pid+TTL 抢写锁换成真正的 OS 级锁。

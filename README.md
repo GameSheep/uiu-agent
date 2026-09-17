@@ -554,6 +554,19 @@ uiu sessions search <关键词>   # 跨会话关键词检索（免费秒回）
 uiu sessions remove <名>
 ```
 
+### `audit`
+
+谁在什么时候用什么参数做了什么、用户确认与否——每次工具执行都会留一条 append-only 记录
+（密钥字段自动脱敏）。
+
+```bash
+uiu audit                # 最近 30 条
+uiu audit --tail 200     # 最近 200 条
+uiu audit --json         # 原始 JSONL（便于接日志系统）
+```
+
+落盘在 `<workspace>/audit/uiu-audit.jsonl`，超过 5MB 自动滚动。
+
 ### `backup` / `restore`
 
 用户数据的兜底：配置、会话、记忆、技能、定时任务打包成一个 zip；恢复前会自动留一份快照，

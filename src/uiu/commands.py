@@ -1460,3 +1460,34 @@ def cmd_restore(args) -> int:
         print(f"  恢复前快照: {result['safety_backup']}")
     print("  提示：重启 uiu 让新配置生效")
     return 0
+
+
+# ---------- audit（工具执行审计日志，审计 §5.6） ----------
+
+def cmd_audit(args) -> int:
+    import json as _json
+
+    ws = _workspace(args)
+    from .audit import audit_path, read_events
+
+    events = read_events(ws, tail=int(getattr(args, "tail", 30) or 30))
+    if not events:
+        print(f"(还没有审计记录 — 工具执行后写入 {audit_path(ws)})")
+        return 0
+
+    if getattr(args, "json", False):
+        for event in events:
+            print(_json.dumps(event, ensure_ascii=False))
+        return 0
+
+    for event in events:
+        when = event.get("time", "")
+        kind = event.get("event", "?")
+        tool = event.get("tool", "")
+        status = event.get("status") or event.get("decision") or ""
+        ms = event.get("ms")
+        detail = str(event.get("detail") or event.get("reason") or "")[:70]
+        timing = f" {ms}ms" if isinstance(ms, int) and ms else ""
+        print(f"  {when}  {kind:<12} {tool:<18} {status:<10}{timing}  {detail}")
+    print(f"\n共 {len(events)} 条 · {audit_path(ws)}")
+    return 0

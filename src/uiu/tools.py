@@ -11,6 +11,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 # ----- built-in tool: shell -----
@@ -365,8 +366,18 @@ def call_tool(name: str, arguments_json: str, skills: list | None = None) -> str
         from . import confirm as _confirm_mod
         allowed, reason = intercept_tool_call(name, args, confirm_handler=_confirm_mod._confirm)
         if not allowed:
+            _audit_tool(name, args, "denied", detail=str(reason)[:200])
             return f"[error] {reason}"
-        return fn(**args)
+        started = time.monotonic()
+        try:
+            result = fn(**args)
+        except Exception as exc:
+            _audit_tool(name, args, "error", detail=f"{type(exc).__name__}: {exc}"[:200],
+                        ms=int((time.monotonic() - started) * 1000))
+            raise
+        _audit_tool(name, args, "ok", detail=str(result)[:200],
+                    ms=int((time.monotonic() - started) * 1000))
+        return result
     except json.JSONDecodeError as e:
         return f"[error] invalid JSON args: {e}"
     except TypeError as e:
@@ -377,3 +388,13 @@ def call_tool(name: str, arguments_json: str, skills: list | None = None) -> str
 
 def execute(name: str, arguments_json: str, skills: list | None = None) -> str:
     return call_tool(name, arguments_json, skills=skills)
+
+
+def _audit_tool(name: str, args: dict, status: str, *, detail: str = "", ms: int = 0) -> None:
+    """每次工具执行都留一条 append-only 审计（审计 §5.6）。失败不影响执行。"""
+    try:
+        from .audit import record
+        record(None, "tool_call", tool=name, status=status, args=args,
+               detail=detail, ms=ms, source=os.environ.get("UIU_AUDIT_SOURCE", "local"))
+    except Exception:
+        pass

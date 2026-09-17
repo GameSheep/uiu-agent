@@ -222,6 +222,11 @@ def _build_parser() -> argparse.ArgumentParser:
     pdoc.add_argument("--fix", action="store_true", help="apply auto-fixes (prompts per item)")
     pdoc.add_argument("--yes", action="store_true", help="with --fix: apply all without prompting")
 
+    # audit（工具执行审计日志，审计 §5.6）
+    paud = sub.add_parser("audit", help="show the tool-execution audit log")
+    paud.add_argument("--tail", type=int, default=30, help="show the newest N events (default 30)")
+    paud.add_argument("--json", action="store_true", help="print raw JSONL")
+
     # backup / restore（用户数据兜底，审计 §3.4）
     pbk = sub.add_parser("backup", help="back up the workspace (config/sessions/memory/skills)")
     pbk.add_argument("--to", default="", help="target dir (default: <workspace>/backups)")
@@ -397,7 +402,7 @@ def _dispatch(args, parser: argparse.ArgumentParser) -> int:
     from .commands import (
         cmd_channel, cmd_config, cmd_cron, cmd_daemon, cmd_doctor, cmd_init, cmd_macro, cmd_model,
         cmd_sessions, cmd_show, cmd_update, cmd_version, cmd_skills, cmd_publish, cmd_plugins,
-        cmd_serve, cmd_quick, cmd_backup, cmd_restore,
+        cmd_serve, cmd_quick, cmd_backup, cmd_restore, cmd_audit,
     )
 
     if args.version or args.cmd == "version":
@@ -421,6 +426,7 @@ def _dispatch(args, parser: argparse.ArgumentParser) -> int:
         "quick": cmd_quick,
         "backup": cmd_backup,
         "restore": cmd_restore,
+        "audit": cmd_audit,
         "doctor": cmd_doctor,
     }
     handler = handlers.get(args.cmd)

@@ -40,6 +40,7 @@
 | P0-4 依赖声明修正 | ✅ 完成 | playwright→`[browser]`；uiautomation→`[desktop]`；补齐 numpy/opencv-python（核心）、websockets（browser）、scipy/sounddevice/SpeechRecognition/openai-whisper（voice）；新增扫描测试保证「src 里每个第三方 import 都被声明」；8 个原本在门外的测试模块现在可收集（2 处真实修复 + 显式 skip） |
 | P0-5 错误契约 | ✅ 完成 | `uiu config --list` 遇到坏 config.yaml 现在 stderr + rc=2；`test_broken_config_never_reports_success` 同时锁定 show/config/doctor 三者 |
 | P0-6 日志体系 | ✅ 完成 | 新增 `src/uiu/log.py`（分级 + `RotatingFileHandler` 5MB×3 + workspace 落盘 + 失败降级）；daemon 手写 append 改为结构化日志；gateway 启动/绑定/鉴权/agent 异常/发送失败/定时任务全部落盘；cron 任务开始-结束-异常落盘；损坏文件备份与 config 解析失败落盘；TUI 启动接上日志。测试：`tests/test_logging.py`（9 个，含轮转、级别、密钥不入日志、日志目录不可用时不崩） |
+| P1-8 路径白名单 + shell 语义确认 + 审计日志 | ✅ 完成 | `classify_path` 三态路径决策（白名单/越界确认/凭据拒绝）；`classify_command` 语义分级（只读放行，写/网络/进程/系统/包管理/解释器/未知一律确认，破坏性拒绝）；确认框显示完整命令+cwd；`audit.py` append-only JSONL（脱敏、滚动）+ `uiu audit`。测试：`tests/test_security_policy.py`（48）。**未做**：本次会话内允许同类（有意保留每次确认） |
 | P1-9 schema 版本 + 迁移 + 备份恢复 | ✅ 完成 | `schema.py`：config/session/jobs 带版本号并读时迁移（jobs 是真实结构变更，迁移在锁内做）；`backup.py` + `uiu backup/restore`：滚动 7 份、恢复前快照可撤销、拒绝 zip-slip、daemon 每日自动备份。测试：`test_schema_migration.py`(11) + `test_backup_restore.py`(11) |
 | P1-7 覆盖率基线 | ✅ 完成 | 实测 53.5%；CI 门禁 `--cov-fail-under=50`；零覆盖模块与最弱 10 个已记录（见 §6.1） |
 | 版本单一来源 | ✅ 完成 | npm 0.1.5 → 0.1.7；`test_version_is_single_source` 锁定 pyproject/__init__/npm/CHANGELOG |
@@ -191,11 +192,20 @@
 **影响**：用户家目录其余文件全部可读写——含浏览器 Cookie/Login Data、SSH config、网银/Steam/配置文件；LLM 被注入后可读取并外发。
 **建议**：改为「workspace 白名单 + 显式授权目录」，越界一律走用户确认；敏感凭据目录（`AppData\\Local\\Google\\Chrome`、`.ssh`）加入黑名单。
 
+**已修复（round 8）**：`_sandbox.classify_path()` 三态决策——workspace/cwd/临时目录**放行**；
+越界路径**必须用户确认**（此前读任意用户目录是静默放行的）；凭据目录（`.ssh`/`.aws`/`.gnupg`/`.kube`/
+Chrome User Data/Firefox Profiles/Windows Credentials/`.uiu` 等）与系统目录、敏感文件名**一律拒绝**。
+
 ### 5.3 shell 确认策略偏弱 — 重要
 **证据**：`confirm.py` `CONFIRM_TOOLS = {send_wechat, shutdown, macro_play}`（`shell_exec` 不在其中）；实际拦截靠 `risk_guardrails.py` 的正则（`BLOCKED_SHELL_PATTERNS` + `rm/del/rmdir/git push --force/drop database` 关键词）。
 **现状说明**：好消息是 `tools.py:364` 在 `call_tool` 里调用了 `intercept_tool_call`，即**交互路径也生效**（不是只有 autonomous loop）。
 **影响**：正则黑名单易绕过（大小写/编码/管道/脚本文件 `powershell -enc`、`cmd /c`、`; &&` 链式）；一旦绕过，就是无确认的任意命令执行。
 **建议**：把「写/删除/网络/进程」类语义提升为**默认需确认**（白名单放行只读命令），确认对话框显示完整命令与 cwd，并支持「本次会话内允许同类」。
+
+**已修复（round 8）**：新增 `classify_command()` 按语义分段判定——只读动词（`dir/type/git status/…`）放行；
+**文件写、网络、进程控制、系统设置、包管理、解释器执行、重定向、未知命令一律需确认**（fail-safe，
+不再默认放行）；破坏性命令仍然直接拒绝。确认框改为显示**完整命令 + cwd**（或路径）。
+「本次会话内允许同类」**未实现**（有意为之：自动放行删除/网络一类操作风险过高，宁可每次确认）。
 
 ### 5.4 密钥明文落盘 — 重要
 **证据**：API key 写入 `workspace/.env`（`commands.py:204-211`）；`cryptography` 仅用于企微消息解密（`wecom_crypto.py`），**未用于本地密钥加密**；`.env` 只有工具层 deny。
@@ -208,6 +218,11 @@
 ### 5.6 无审计日志 — 重要
 **现状**：工具执行（含 shell）没有持久审计记录。
 **建议**：写 append-only 审计日志（时间、来源渠道、工具、参数摘要、结果状态、确认人），供追溯与合规。
+
+**已修复（round 8）**：`src/uiu/audit.py`——`<workspace>/audit/uiu-audit.jsonl`，加锁 + fsync 追加，
+超 5MB 滚动；密钥类字段（key/token/secret/password/credential/cookie）自动脱敏；
+`tools.call_tool` 是唯一入口，因此**每次工具执行**（ok/denied/error + 耗时）与**每次确认**
+（approved/rejected/no_handler）都会留痕；新增 `uiu audit [--tail N] [--json]` 查看。
 
 ---
 

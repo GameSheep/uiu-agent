@@ -9,8 +9,10 @@ Policy (fail-closed on the worst, permissive elsewhere so daily use doesn't brea
 
 from __future__ import annotations
 
+import enum
 import os
 import re
+import tempfile
 from pathlib import Path
 
 # ----- limits -----
@@ -44,6 +46,71 @@ def _blocked_sys_dirs() -> list[str]:
 
 
 _BLOCKED_DIRS = _blocked_sys_dirs()
+
+
+class PathDecision(str, enum.Enum):
+    """路径访问决策：白名单内放行 / 越界需用户确认 / 一律拒绝。"""
+
+    ALLOW = "allow"
+    CONFIRM = "confirm"
+    DENY = "deny"
+
+
+def _credential_dirs() -> list[str]:
+    """凭据类目录：里面的东西（cookie / 凭据库 / 私钥）一律不给工具碰。"""
+    home = Path.home()
+    appdata = Path(os.environ.get("APPDATA", home / "AppData" / "Roaming"))
+    local = Path(os.environ.get("LOCALAPPDATA", home / "AppData" / "Local"))
+    cands = [
+        home / ".ssh", home / ".aws", home / ".gnupg", home / ".kube",
+        home / ".config" / "gcloud", home / ".uiu",
+        appdata / "Microsoft" / "Credentials",
+        local / "Microsoft" / "Credentials",
+        local / "Google" / "Chrome" / "User Data",
+        appdata / "Mozilla" / "Firefox" / "Profiles",
+        appdata / "Opera Software", local / "BraveSoftware",
+    ]
+    return [os.path.normcase(str(c)) for c in cands]
+
+
+_CREDENTIAL_DIRS = _credential_dirs()
+
+
+def _allowed_roots(workspace: Path | str | None = None) -> list[str]:
+    """放行区：workspace、当前工作目录、系统临时目录。"""
+    roots = [Path.cwd(), Path(tempfile.gettempdir())]
+    if workspace:
+        roots.append(Path(workspace))
+    env_ws = os.environ.get("UIU_WORKSPACE", "").strip()
+    if env_ws:
+        roots.append(Path(env_ws))
+    return [os.path.normcase(str(r)) for r in roots]
+
+
+def _under(norm: str, root: str) -> bool:
+    return norm == root or norm.startswith(root.rstrip(os.sep) + os.sep)
+
+
+def classify_path(path: str, *, for_write: bool = False,
+                  workspace: Path | str | None = None) -> tuple[PathDecision, str, Path | None]:
+    """三态路径决策（审计 §5.2）。
+
+    黑名单只拦「已知的坏地方」，白名单才是「确定安全的地方」——两者的差集必须由用户拍板，
+    不能再默默放行（原来读任意用户目录是静默允许的）。
+    """
+    ok, msg, resolved = check_path(path, for_write=for_write)
+    if not ok or resolved is None:
+        return PathDecision.DENY, msg, None
+    norm = _norm(resolved)
+    for blocked in _CREDENTIAL_DIRS:
+        if _under(norm, blocked):
+            return (PathDecision.DENY,
+                    f"[error] 凭据/密钥目录不可访问: {resolved}（含 cookie、凭据库或私钥）", None)
+    for root in _allowed_roots(workspace):
+        if _under(norm, root):
+            return PathDecision.ALLOW, "", resolved
+    return (PathDecision.CONFIRM,
+            f"路径在 workspace 之外：{resolved}", resolved)
 
 
 def is_sensitive_filename(p: Path) -> bool:

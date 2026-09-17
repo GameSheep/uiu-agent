@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from ._atomic import atomic_write_text
+from .log import get_logger, log_path as workspace_log_path, setup_logging
 
 from . import cron
 
@@ -87,10 +88,10 @@ def run_daemon(workspace: Path, interval: int = 60, stop_event=None) -> None:
     ws = Path(workspace).resolve()
     pid = os.getpid()
     atomic_write_text(pid_path(), str(pid))
-    
-    with open(log_path(), "a", encoding="utf-8") as log:
-        log.write(f"\n[{time.strftime('%Y-%m-%d %H:%M:%S')}] [daemon] Started (PID {pid}, ws: {ws})\n")
-        log.flush()
+    # 分级 + 轮转的日志落在 workspace/logs/uiu.log（daemon.log 只留子进程 stdout）
+    setup_logging(ws)
+    log = get_logger("daemon")
+    log.info("started (PID %s, ws %s, interval %ss)", pid, ws, interval)
 
     try:
         while True:
@@ -98,15 +99,10 @@ def run_daemon(workspace: Path, interval: int = 60, stop_event=None) -> None:
                 break
             try:
                 ran = cron.tick(ws)
-                if ran:
-                    with open(log_path(), "a", encoding="utf-8") as log:
-                        for out in ran:
-                            log.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] [cron] Ran job -> {out}\n")
-                        log.flush()
-            except Exception as e:
-                with open(log_path(), "a", encoding="utf-8") as log:
-                    log.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] [daemon error] {e}\n")
-                    log.flush()
+                for out in ran:
+                    log.info("cron job finished → %s", out)
+            except Exception as exc:
+                log.exception("tick failed: %s", exc)
 
             if stop_event:
                 if stop_event.wait(interval):
@@ -115,9 +111,7 @@ def run_daemon(workspace: Path, interval: int = 60, stop_event=None) -> None:
                 time.sleep(interval)
     finally:
         pid_path().unlink(missing_ok=True)
-        with open(log_path(), "a", encoding="utf-8") as log:
-            log.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] [daemon] Stopped\n")
-            log.flush()
+        log.info("stopped")
 
 
 def start_daemon(workspace: Path) -> tuple[bool, str]:

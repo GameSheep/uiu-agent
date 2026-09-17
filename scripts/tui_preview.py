@@ -302,6 +302,10 @@ def main(argv: list[str] | None = None) -> int:
         fn, size = states[name]
         path = asyncio.run(_render(name, fn, size, out_dir, not args.svg_only))
         print(f"[ok] {path}")
+    # 应用会往 scratch workspace 里写日志；Windows 上打开的文件会锁住目录，
+    # 不先关掉 handler 就删不掉 _scratch（测试里就是这么发现的）。
+    from uiu.log import close_handlers
+    close_handlers()
     shutil.rmtree(out_dir / "_scratch", ignore_errors=True)
     return 0
 

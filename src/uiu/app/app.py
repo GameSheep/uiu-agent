@@ -1341,6 +1341,14 @@ class UiuApp(App[None]):
         except Exception:
             pass
 
+        # TUI 侧也接上日志：出现问题时 workspace/logs/uiu.log 里要有线索
+        try:
+            from ..log import get_logger, setup_logging
+            setup_logging(self.ws.root)
+            get_logger("tui").info("TUI 启动（agent=%s, model=%s）", self._agent_name, self._model_display())
+        except Exception:
+            pass
+
         self._refresh_ctx()
         self._refresh_recent()
         self._sync_title()

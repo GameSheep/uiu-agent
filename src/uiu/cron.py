@@ -17,6 +17,7 @@ from pathlib import Path
 
 from ._atomic import (atomic_write_json, atomic_write_text, file_lock,
                       load_json_tolerant, locked_update_json)
+from .log import get_logger
 
 
 def cron_dir(workspace: Path) -> Path:
@@ -328,6 +329,7 @@ def tick(workspace: Path) -> list[str]:
 
 
 def _tick_locked(ws_path: Path) -> list[str]:
+    log = get_logger("cron")
     ran: list[str] = []
     now = time.time()
     jobs = load_jobs(ws_path)
@@ -336,10 +338,13 @@ def _tick_locked(ws_path: Path) -> list[str]:
     for job in jobs:
         if not job.get("enabled") or job.get("next_run", 0) > now:
             continue
+        log.info("running job %s (%s)", job.get("name"), job.get("id"))
         try:
             out = run_job(ws_path, job)
             ran.append(out)
+            log.info("job %s done → %s", job.get("name"), out)
         except Exception as e:
+            log.exception("job %s failed: %s", job.get("name"), e)
             err_dir = cron_dir(ws_path) / "output" / job["id"]
             err_dir.mkdir(parents=True, exist_ok=True)
             atomic_write_text(err_dir / f"{time.strftime('%Y%m%d_%H%M%S')}.err.md",

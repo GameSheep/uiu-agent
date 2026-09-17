@@ -22,6 +22,7 @@ from pathlib import Path
 
 from . import channels
 from .agent import run_turn
+from .log import get_logger, setup_logging
 from .config import AppConfig, ChannelConfig, load_config, parse_env_file
 from .llm import make_client
 from .workspace import Workspace, load_workspace
@@ -92,6 +93,7 @@ class Gateway:
         import os as _os
         self._gateway_token = _os.environ.get("UIU_GATEWAY_TOKEN", "")
         self._bind_host = "127.0.0.1"
+        self.log = get_logger("gateway")
         try:
             from .delegation import set_context as _set_delegation_ctx
             _set_delegation_ctx(self.client, cfg.model, ws, self.tool_schemas)
@@ -200,7 +202,9 @@ class Gateway:
                 cfg=self.cfg.model,
             )
             print(f"[gateway] reply: {reply[:60]}", flush=True)
+            self.log.info("reply sent (chat=%s, %d chars)", chat_id[:32], len(reply))
         except Exception as e:
+            self.log.exception("agent run failed (chat=%s): %s", chat_id[:32], e)
             reply = f"[error] {type(e).__name__}: {e}"
         # send back on the originating adapter
         with self._lock:
@@ -209,6 +213,7 @@ class Gateway:
             if ad.config.name == origin_name:
                 ok, msg = ad.send(chat_id, reply)
                 if not ok:
+                    self.log.warning("send failed on %s: %s", ad.name, msg)
                     print(f"[gateway] send failed ({ad.name}): {msg}", file=sys.stderr)
                 self._persist(chat_id, messages)
                 return
@@ -233,6 +238,9 @@ class Gateway:
 
     def run(self, port: int = 8765, host: str = "") -> None:
         """Start all enabled channel adapters + webhook server, block forever."""
+        setup_logging(self.ws.root)
+        self.log.info("gateway starting (channels=%d, port=%s, host=%s)",
+                      len([c for c in self.cfg.channels if c.enabled]), port, host or "(default)")
         enabled = [c for c in self.cfg.channels if c.enabled]
         if not enabled:
             print("没有 enabled 的 channel。先: uiu channel add <name> --type <telegram|feishu|wecom>")
@@ -294,8 +302,10 @@ class Gateway:
                 try:
                     ran = _cron.tick(self.ws.root)
                     for out in ran:
+                        self.log.info("cron job finished → %s", out)
                         print(f"[cron] ran → {out}", flush=True)
                 except Exception as e:
+                    self.log.exception("cron tick failed: %s", e)
                     print(f"[cron] tick failed: {e}", file=sys.stderr)
 
         threading.Thread(target=_cron_loop, daemon=True).start()
@@ -322,6 +332,8 @@ class Gateway:
         self._bind_host = bind_host
         for warning in warnings:
             print(f"[gateway] 警告: {warning}", file=sys.stderr, flush=True)
+        self.log.info("webhook server: bind=%s port=%s auth=%s",
+                      bind_host, port, auth_status(self._gateway_token))
         print(f"[gateway] 鉴权 {auth_status(self._gateway_token)} · 监听 {bind_host}:{port}", flush=True)
 
         class Handler(BaseHTTPRequestHandler):

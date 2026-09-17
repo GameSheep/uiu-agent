@@ -39,7 +39,7 @@
 | P0-3 LICENSE | ✅ 完成 | 新增 `LICENSE`（MIT / GameSheep）；pyproject 补 `authors`；`tests/test_packaging_contract.py::test_license_file_matches_metadata` |
 | P0-4 依赖声明修正 | ✅ 完成 | playwright→`[browser]`；uiautomation→`[desktop]`；补齐 numpy/opencv-python（核心）、websockets（browser）、scipy/sounddevice/SpeechRecognition/openai-whisper（voice）；新增扫描测试保证「src 里每个第三方 import 都被声明」；8 个原本在门外的测试模块现在可收集（2 处真实修复 + 显式 skip） |
 | P0-5 错误契约 | ✅ 完成 | `uiu config --list` 遇到坏 config.yaml 现在 stderr + rc=2；`test_broken_config_never_reports_success` 同时锁定 show/config/doctor 三者 |
-| P0-6 日志体系 | 待做 | — |
+| P0-6 日志体系 | ✅ 完成 | 新增 `src/uiu/log.py`（分级 + `RotatingFileHandler` 5MB×3 + workspace 落盘 + 失败降级）；daemon 手写 append 改为结构化日志；gateway 启动/绑定/鉴权/agent 异常/发送失败/定时任务全部落盘；cron 任务开始-结束-异常落盘；损坏文件备份与 config 解析失败落盘；TUI 启动接上日志。测试：`tests/test_logging.py`（9 个，含轮转、级别、密钥不入日志、日志目录不可用时不崩） |
 | 版本单一来源 | ✅ 完成 | npm 0.1.5 → 0.1.7；`test_version_is_single_source` 锁定 pyproject/__init__/npm/CHANGELOG |
 
 ### 审计更正（2026-09-17）
@@ -100,6 +100,8 @@
 **证据**：`print()` **236 处** vs `logging` **2 处**；无 `basicConfig`/FileHandler/RotatingFile；daemon 手写 append 到 `~/.uiu/daemon.log`，无轮转、无级别、无结构化。
 **影响**：gateway 长期跑（服务 telegram/微信），出问题时无任何可回溯记录；磁盘可能被日志撑爆或因禁止写入而丢日志。
 **建议**：引入标准 `logging`（级别 + 轮转 + workspace 内路径），daemon/gateway 强制落文件；用户可见错误同时走 stderr。
+
+**已修复（round 5）**：`src/uiu/log.py` 提供 `setup_logging(workspace)`（`RotatingFileHandler` 5MB×3、`UIU_LOG_LEVEL` 控级别、`UIU_LOG_CONSOLE=1` 才打终端、失败即静默降级）与 `get_logger(name)`；daemon/gateway/cron/config/atomic/TUI 全部接入。日志写入 `<workspace>/logs/uiu.log`（daemon 的 `~/.uiu/daemon.log` 保留为子进程 stdout 捕获）。
 
 ### 2.3 上帝模块与两套 TUI 并存 — 重要
 **证据**：`commands.py` **1,221 行 / 150 处 print**；`desktop_tools.py` 1,185 行（22 处文件写入）；`browser_connect.py` 625 行；同时存在 `tui.py`（classic REPL，377 行）与新 `app/`（Textual）。

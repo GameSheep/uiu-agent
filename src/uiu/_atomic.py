@@ -100,6 +100,11 @@ def backup_corrupt(path: Path | str) -> Path | None:
         os.replace(path, target)
     except OSError:
         return None
+    try:                    # 数据被移到一边是重要事件，必须留下痕迹
+        from .log import get_logger
+        get_logger("atomic").warning("损坏文件已备份: %s → %s", path.name, target.name)
+    except Exception:
+        pass
     return target
 
 

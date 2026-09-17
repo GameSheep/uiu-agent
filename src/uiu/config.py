@@ -225,6 +225,8 @@ def load_config(workspace: Path) -> AppConfig:
         with path.open("r", encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
     except Exception as e:
+        from .log import get_logger
+        get_logger("config").error("config.yaml 解析失败 (%s): %s: %s", path, type(e).__name__, e)
         raise RuntimeError(f"config.yaml 解析失败 ({path}): {type(e).__name__}: {e}") from e
     if not isinstance(data, dict):
         raise RuntimeError(f"config.yaml 顶层须为 mapping ({path})")

@@ -12,6 +12,8 @@
 - **网关默认鉴权**：默认只绑 `127.0.0.1`；无 `UIU_GATEWAY_TOKEN` 时拒绝非本机监听（需显式
   `UIU_GATEWAY_INSECURE=1` 才放行并告警）；新增 `uiu serve --host`；通用 webhook 的 secret 改为必填；
   `uiu doctor` 新增可自动修复的 `channel/gateway-no-token`。
+- **删除可撤销（回收站）**：新增 `uiu trash [--restore/--purge]`；删会话/宏/渠道/定时任务都先进
+  `<workspace>/.trash/`（默认留 7 天，daemon 每日清理），恢复拒绝覆盖已有文件；TUI 里 **Ctrl+Z** 撤销。
 - **平台支持矩阵**：新增 `docs/platform-support.md`（Windows 一等公民；能力逐项标注，未验证的写「未实测」）；
   「依赖 Windows 专有库的模块」清单由 `scripts/gen_platform_doc.py` 扫描生成并进 CI 校验；
   `uiu doctor` 在非 Windows 上会提示 `platform/degraded`。

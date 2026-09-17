@@ -570,6 +570,19 @@ uiu sessions search <关键词>   # 跨会话关键词检索（免费秒回）
 uiu sessions remove <名>
 ```
 
+### `trash`（回收站 / 撤销）
+
+删除会话、宏、渠道、定时任务**都是可撤销的**：它们先进回收站，默认保留 7 天（daemon 每天清理）。
+TUI 里删完按 **Ctrl+Z** 也能立刻找回。
+
+```bash
+uiu trash                                  # 列出回收站条目
+uiu trash --restore 20260917-120000-session-doome-1a2b
+uiu trash --purge --days 7                 # 清理超过 7 天的条目
+uiu sessions remove <名>                   # 删会话（进回收站）
+uiu macro remove <名>                      # 删宏（进回收站）
+```
+
 ### `audit`
 
 谁在什么时候用什么参数做了什么、用户确认与否——每次工具执行都会留一条 append-only 记录

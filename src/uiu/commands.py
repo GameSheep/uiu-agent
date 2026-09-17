@@ -706,9 +706,18 @@ def cmd_channel(args) -> int:
         return 0
 
     if args.action == "remove":
+        victim = cfg.channel(args.name)
         cfg.channels = [c for c in cfg.channels if c.name != args.name]
         save_config(ws, cfg)
-        _print_ok(f"removed {args.name}")
+        if victim is not None:            # 配置改动也能撤销（回收站里存的是渠道定义）
+            try:
+                import dataclasses
+
+                from .trash import add_record
+                add_record(ws, "channel", dataclasses.asdict(victim), label=args.name)
+            except Exception:
+                pass
+        _print_ok(f"removed {args.name}（已移入回收站，uiu trash 可恢复）")
         return 0
 
     if args.action == "test":
@@ -1114,8 +1123,16 @@ def cmd_cron(args) -> int:
         return 0
 
     if action == "remove":
+        job = next((j for j in _cron.load_jobs(ws)
+                    if j["id"] == args.name or j["name"] == args.name), None)
         if _cron.remove_job(ws, args.name):
-            _print_ok(f"removed {args.name}")
+            if job is not None:
+                try:
+                    from .trash import add_record
+                    add_record(ws, "cron_job", job, label=job.get("name", ""))
+                except Exception:
+                    pass
+            _print_ok(f"removed {args.name}（已移入回收站，uiu trash 可恢复）")
             return 0
         _print_err(f"no such job: {args.name}")
         return 2
@@ -1490,4 +1507,33 @@ def cmd_audit(args) -> int:
         timing = f" {ms}ms" if isinstance(ms, int) and ms else ""
         print(f"  {when}  {kind:<12} {tool:<18} {status:<10}{timing}  {detail}")
     print(f"\n共 {len(events)} 条 · {audit_path(ws)}")
+    return 0
+
+
+# ---------- trash（回收站，审计 §4.1） ----------
+
+def cmd_trash(args) -> int:
+    ws = _workspace(args)
+    from .trash import DEFAULT_KEEP_DAYS, describe, list_entries, purge, restore
+
+    if getattr(args, "restore", ""):
+        ok, msg = restore(ws, str(args.restore))
+        (_print_ok if ok else _print_err)(msg)
+        return 0 if ok else 2
+
+    if getattr(args, "purge", False):
+        removed = purge(ws, days=float(getattr(args, "days", DEFAULT_KEEP_DAYS) or 0))
+        if removed:
+            _print_ok(f"已清理 {len(removed)} 项：{', '.join(removed)}")
+        else:
+            print("(没有超过时限的回收站条目)")
+        return 0
+
+    entries = list_entries(ws)
+    if not entries:
+        print("(回收站是空的 — 删除会话/宏/渠道/定时任务会先移到这里)")
+        return 0
+    for entry in entries:
+        print("  " + describe(entry))
+    print(f"\n共 {len(entries)} 项 · 恢复: uiu trash --restore <id> · 清理: uiu trash --purge")
     return 0

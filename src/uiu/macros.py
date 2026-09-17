@@ -121,7 +121,7 @@ def macro_list() -> str:
 
 
 def macro_remove(name: str) -> str:
-    """Delete a saved macro."""
+    """删除宏：默认移入回收站（uiu trash --restore 可找回）。"""
     safe = _valid_name(name)
     if not safe:
         return "[error] 宏名非法"
@@ -129,9 +129,10 @@ def macro_remove(name: str) -> str:
     if path is None or not path.exists():
         return f"[error] 宏不存在: {safe}"
     try:
-        path.unlink()
-        return f"[ok] 已删除宏 '{safe}'"
-    except OSError as e:
+        from .trash import add_file
+        add_file(path.parent.parent, path, kind="macro", label=safe)
+        return f"[ok] 已删除宏 '{safe}'（已移入回收站，uiu trash 可恢复）"
+    except Exception as e:
         return f"[error] 删除失败: {e}"
 
 

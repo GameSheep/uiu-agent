@@ -222,6 +222,13 @@ def _build_parser() -> argparse.ArgumentParser:
     pdoc.add_argument("--fix", action="store_true", help="apply auto-fixes (prompts per item)")
     pdoc.add_argument("--yes", action="store_true", help="with --fix: apply all without prompting")
 
+    # trash（回收站，审计 §4.1）
+    ptr = sub.add_parser("trash", help="recycle bin: list / restore / purge deleted items")
+    ptr.add_argument("--list", action="store_true", help="list trashed items (default)")
+    ptr.add_argument("--restore", default="", help="restore an entry by id")
+    ptr.add_argument("--purge", action="store_true", help="delete entries older than --days")
+    ptr.add_argument("--days", type=float, default=7.0, help="purge threshold in days (default 7)")
+
     # audit（工具执行审计日志，审计 §5.6）
     paud = sub.add_parser("audit", help="show the tool-execution audit log")
     paud.add_argument("--tail", type=int, default=30, help="show the newest N events (default 30)")
@@ -402,7 +409,7 @@ def _dispatch(args, parser: argparse.ArgumentParser) -> int:
     from .commands import (
         cmd_channel, cmd_config, cmd_cron, cmd_daemon, cmd_doctor, cmd_init, cmd_macro, cmd_model,
         cmd_sessions, cmd_show, cmd_update, cmd_version, cmd_skills, cmd_publish, cmd_plugins,
-        cmd_serve, cmd_quick, cmd_backup, cmd_restore, cmd_audit,
+        cmd_serve, cmd_quick, cmd_backup, cmd_restore, cmd_audit, cmd_trash,
     )
 
     if args.version or args.cmd == "version":
@@ -427,6 +434,7 @@ def _dispatch(args, parser: argparse.ArgumentParser) -> int:
         "backup": cmd_backup,
         "restore": cmd_restore,
         "audit": cmd_audit,
+        "trash": cmd_trash,
         "doctor": cmd_doctor,
     }
     handler = handlers.get(args.cmd)

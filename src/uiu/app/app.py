@@ -642,7 +642,13 @@ class SessionSwitcher(ModalScreen[str]):
             return
         try:
             from .. import sessions as _sessions
-            _sessions.remove_session(self.workspace, sid)
+            meta = _sessions.remove_session_ex(self.workspace, sid)
+            if meta:
+                # 让 App 记住这条回收站条目：Ctrl+Z 一键撤销
+                try:
+                    self.app._last_trash_id = str(meta.get("id", ""))
+                except Exception:
+                    pass
         except Exception:
             pass
         await self.reload_sessions()
@@ -1170,6 +1176,7 @@ class UiuApp(App[None]):
         Binding("ctrl+x", "session_switcher", "会话切换", show=False, priority=True),
         Binding("ctrl+end", "scroll_bottom", "回到底部", show=False, priority=True),
         Binding("ctrl+y", "copy_last", "复制回答", show=False, priority=True),
+        Binding("ctrl+z", "undo_delete", "撤销删除", show=False, priority=True),
         Binding("f3", "next_hit", "下一处命中", show=False, priority=True),
         Binding("shift+f3", "prev_hit", "上一处命中", show=False, priority=True),
         Binding("ctrl+u", "usage_panel", "用量", show=False, priority=True),
@@ -1226,6 +1233,7 @@ class UiuApp(App[None]):
         self._search_idx = -1
         self._palette_recent: list[str] = []
         self._session_scroll: dict[str, float] = {}
+        self._last_trash_id = ""      # Ctrl+Z 撤销上一次删除（会话/宏…）
         self._emit_alive = True     # 卸载后工作线程还会 emit，别往关闭的 loop 里丢协程
 
     # -- lifecycle -------------------------------------------------------
@@ -2335,6 +2343,30 @@ class UiuApp(App[None]):
 
     async def action_prev_hit(self) -> None:
         await self._cycle_hit(-1)
+
+    async def action_undo_delete(self) -> None:
+        """撤销上一次删除：把回收站里最近一条还原回来（审计 §4.1）。"""
+        if not self._last_trash_id:
+            self._toast("没有可撤销的删除", kind="error")
+            return
+        try:
+            from ..trash import restore
+            ok, msg = restore(self.ws.root, self._last_trash_id)
+        except Exception as exc:
+            ok, msg = False, f"撤销失败: {type(exc).__name__}: {exc}"
+        if ok:
+            self._last_trash_id = ""
+            self._toast(glyph("ok") + " " + msg)
+            await self._refresh_after_undo()
+        else:
+            self._toast(msg, kind="error")
+
+    async def _refresh_after_undo(self) -> None:
+        try:
+            self._refresh_recent()
+            self._refresh_ctx()
+        except Exception:
+            pass
 
     async def action_scroll_bottom(self) -> None:
         try:

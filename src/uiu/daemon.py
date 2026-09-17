@@ -92,6 +92,14 @@ def run_daemon(workspace: Path, interval: int = 60, stop_event=None) -> None:
     setup_logging(ws)
     log = get_logger("daemon")
     log.info("started (PID %s, ws %s, interval %ss)", pid, ws, interval)
+    try:                                  # 回收站按天数清理（删除是可撤销的，但也别无限涨）
+        from .trash import purge as _purge_trash
+        dropped = _purge_trash(ws)
+        if dropped:
+            log.info("trash purged: %s", ", ".join(dropped))
+    except Exception as exc:
+        log.exception("trash purge failed: %s", exc)
+
     try:                                  # 每日滚动备份：用户数据的最后一道兜底
         from .backup import maybe_daily_backup
         made = maybe_daily_backup(ws)

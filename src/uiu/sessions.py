@@ -84,12 +84,27 @@ def recent_sessions(workspace: Path, limit: int = 8) -> list[dict]:
     return out
 
 
-def remove_session(workspace: Path, sid: str) -> bool:
+def remove_session_ex(workspace: Path, sid: str, *, hard: bool = False) -> dict | None:
+    """删除会话，返回回收站条目（hard=True 时直接删并返回 {"id": "hard"}）。"""
+    path = _path(workspace, sid)
+    if not path.exists():
+        return None
+    if hard:
+        try:
+            path.unlink()
+            return {"id": "hard"}
+        except OSError:
+            return None
     try:
-        _path(workspace, sid).unlink()
-        return True
-    except OSError:
-        return False
+        from .trash import add_file
+        return add_file(workspace, path, kind="session", label=sid)
+    except Exception:
+        return None                 # 回收站写不进去时保留文件，不静默丢
+
+
+def remove_session(workspace: Path, sid: str, *, hard: bool = False) -> bool:
+    """删除会话。默认**移入回收站**（可 uiu trash --restore 找回），hard=True 才真删。"""
+    return remove_session_ex(workspace, sid, hard=hard) is not None
 
 
 def _chars(messages: list[dict]) -> int:

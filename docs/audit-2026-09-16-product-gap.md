@@ -40,6 +40,7 @@
 | P0-4 依赖声明修正 | ✅ 完成 | playwright→`[browser]`；uiautomation→`[desktop]`；补齐 numpy/opencv-python（核心）、websockets（browser）、scipy/sounddevice/SpeechRecognition/openai-whisper（voice）；新增扫描测试保证「src 里每个第三方 import 都被声明」；8 个原本在门外的测试模块现在可收集（2 处真实修复 + 显式 skip） |
 | P0-5 错误契约 | ✅ 完成 | `uiu config --list` 遇到坏 config.yaml 现在 stderr + rc=2；`test_broken_config_never_reports_success` 同时锁定 show/config/doctor 三者 |
 | P0-6 日志体系 | ✅ 完成 | 新增 `src/uiu/log.py`（分级 + `RotatingFileHandler` 5MB×3 + workspace 落盘 + 失败降级）；daemon 手写 append 改为结构化日志；gateway 启动/绑定/鉴权/agent 异常/发送失败/定时任务全部落盘；cron 任务开始-结束-异常落盘；损坏文件备份与 config 解析失败落盘；TUI 启动接上日志。测试：`tests/test_logging.py`（9 个，含轮转、级别、密钥不入日志、日志目录不可用时不崩） |
+| P2-13 破坏性操作可撤销 | ✅ 完成 | `trash.py`（文件类/记录类两种条目、拒绝覆盖、按天清理）+ `uiu trash`；会话/宏/渠道/定时任务删除全部软删除；TUI `Ctrl+Z` 撤销。测试：`tests/test_trash.py`（12） |
 | P1-12 真 LLM 最小 E2E + 平台支持矩阵 | ✅ 完成 | `tests/test_e2e_live_llm.py`（`live` 标记，默认跳过，验证「模型→工具→守卫→审计」整条链路，已证明非静默跳过）；`docs/platform-support.md`（能力矩阵 + 30 个 Windows 专有模块**扫描生成** + `--check`）；doctor 增 `platform/degraded`。测试：`tests/test_platform_support.py`（6） |
 | P1-10 架构/工具/网关 API 文档 | ✅ 完成 | 新增 `docs/architecture.md`（分层/进程模型/数据流/状态与写入约定/安全模型）、`docs/tools.md`（**生成物**，123 工具按模块分组 + 参数 + 需确认标记 + `--check`）、`docs/gateway-api.md`（端点表/鉴权矩阵/回调样例/返回约定）、`docs/troubleshooting.md`；README 加文档索引并修掉三处假数字。测试：`tests/test_docs_sync.py`（12） |
 | P1-8 路径白名单 + shell 语义确认 + 审计日志 | ✅ 完成 | `classify_path` 三态路径决策（白名单/越界确认/凭据拒绝）；`classify_command` 语义分级（只读放行，写/网络/进程/系统/包管理/解释器/未知一律确认，破坏性拒绝）；确认框显示完整命令+cwd；`audit.py` append-only JSONL（脱敏、滚动）+ `uiu audit`。测试：`tests/test_security_policy.py`（48）。**未做**：本次会话内允许同类（有意保留每次确认） |
@@ -164,6 +165,12 @@
 ### 4.1 无撤销 — 重要
 **证据**：`undo/撤销/rollback` 共 29 处，但都在别处（`uiu update` 的 git tag 回滚、桌面长任务 WAL `desktop_tools.py:607`）。删除会话/技能/宏/渠道**没有撤销**，TUI 里 `d` 删会话是即时的。
 **建议**：破坏性操作统一「软删除 + 确认 + 撤销窗口」（TUI 用 toast 带撤销动作，CLI 用 `--yes` 与可恢复的回收站）。
+
+**已修复（round 11）**：新增 `src/uiu/trash.py` 回收站——文件类（会话/宏）整体移入
+`<workspace>/.trash/<id>/`（meta 记录原相对路径），记录类（渠道配置/定时任务）存成 payload.json
+恢复时插回；**恢复拒绝覆盖已存在目标**；默认保留 7 天、daemon 每天清理。
+删会话/删宏/删渠道/删定时任务全部改走回收站；CLI `uiu trash [--restore ID] [--purge --days N]`；
+**TUI 删除后按 Ctrl+Z 一键撤销**。
 
 ### 4.2 首次体验与引导 — 良好，但有断层
 **现状**：有欢迎页 + 模型向导 + 无 key 引导 + `--skip-setup` ✅。

@@ -23,7 +23,13 @@ from . import cron
 
 
 def daemon_dir() -> Path:
-    d = Path.home() / ".uiu"
+    """Daemon state directory (pid / log / autostart scratch).
+
+    Override with UIU_HOME — never assume the user's home is writable (containers,
+    locked-down machines and test runs all need a redirectable location).
+    """
+    override = os.environ.get("UIU_HOME", "").strip()
+    d = Path(override) if override else Path.home() / ".uiu"
     d.mkdir(parents=True, exist_ok=True)
     return d
 

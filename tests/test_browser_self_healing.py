@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import importlib.util as _importlib_util
 import io
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
 from PIL import Image
+
+if _importlib_util.find_spec("playwright") is None:
+    pytest.skip("浏览器测试需要 playwright：pip install uiu[browser]", allow_module_level=True)
 
 from uiu.browser_self_healing import (
     _extract_element_at_point,

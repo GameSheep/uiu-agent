@@ -2,8 +2,15 @@
 
 from __future__ import annotations
 
+import importlib.util as _importlib_util
 from unittest.mock import MagicMock, patch
 
+import pytest
+
+if _importlib_util.find_spec("playwright") is None:
+    pytest.skip("浏览器测试需要 playwright：pip install uiu[browser]", allow_module_level=True)
+
+import uiu.browser_connect  # noqa: E402,F401  patch() 需要先导入子模块
 from uiu.browser_tools import (
     _page,
     browser_click,

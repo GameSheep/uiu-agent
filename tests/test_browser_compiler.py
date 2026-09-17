@@ -5,6 +5,14 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import importlib.util as _importlib_util
+
+import pytest
+
+if _importlib_util.find_spec("playwright") is None:
+    pytest.skip("浏览器测试需要 playwright：pip install uiu[browser]", allow_module_level=True)
+
+
 from uiu.browser_compiler import (
     COMPILED_BROWSER_MACROS,
     compile_browser_trajectory_to_python,

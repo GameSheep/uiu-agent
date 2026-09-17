@@ -1,6 +1,13 @@
 """Tests for UIA locator: accessibility control search and listing."""
 
+import importlib.util as _importlib_util
 from unittest.mock import MagicMock, patch
+
+import pytest
+
+if _importlib_util.find_spec("uiautomation") is None:
+    pytest.skip("UIA 控件定位需要 uiautomation：pip install uiu[desktop]", allow_module_level=True)
+
 
 
 class MockRect:

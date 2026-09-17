@@ -5,6 +5,7 @@ description = "A minimal personal-IP agent: SOUL-driven, skills-extensible, Open
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
+authors = [{ name = "GameSheep", email = "630920922@qq.com" }]
 keywords = ["agent", "cli", "personal-ip", "soul", "ai"]
 classifiers = [
     "Programming Language :: Python :: 3",
@@ -41,8 +42,12 @@ dependencies = [
     "pyperclip>=1.8.0",
     # Fast OCR (Windows native, < 1s)
     "screen-ocr[winrt]>=0.5.0; sys_platform == 'win32'",
-    # Playwright browser automation (CDP connection to default browser)
-    "playwright>=1.40.0",
+    # 屏幕/图像处理：auto_recovery / icon_locator / screen_diff 在模块层直接 import，
+    # 之前靠 rapidocr 的传递依赖侥幸可用 —— 必须显式声明。
+    "numpy>=1.26.0",
+    "opencv-python>=4.8.0",
+    # 浏览器自动化（playwright + chromium）体积大，改为可选：pip install uiu[browser]
+    # 核心依赖只保留「装完就能跑 CLI/TUI/桌面自动化」的部分。
 ]
 
 [project.optional-dependencies]
@@ -51,14 +56,30 @@ channels = [
     "dingtalk-stream>=0.18.0",
     "discord.py>=2.3.0",
 ]
-# pip install uiu[desktop] — CV 桌面自动化（需大模型 key）
-desktop = ["askui>=0.1.0"]
+# pip install uiu[desktop] — CV 桌面自动化（需大模型 key）+ Windows UIA 控件定位
+desktop = [
+    "askui>=0.1.0",
+    "uiautomation>=2.0.18; sys_platform == 'win32'",
+]
 # pip install uiu[browser] — AI 浏览器（拖 playwright+chromium，体积大）
-browser = ["browser-use>=0.1.0"]
+browser = [
+    "browser-use>=0.1.0",
+    "playwright>=1.40.0",
+    # cdp_controller 用 websockets 直连浏览器调试端口
+    "websockets>=12.0",
+]
 # pip install uiu[mcp] — 外部工具协议
 mcp = ["mcp>=1.28.0"]
-# pip install uiu[voice] — TTS（STT 的 whisper/sounddevice 另见 README）
-voice = ["edge-tts>=6.1.0", "pyttsx3>=2.90"]
+# pip install uiu[voice] — TTS + STT（STT 拖 whisper，模型首次使用时下载）
+voice = [
+    "edge-tts>=6.1.0",
+    "pyttsx3>=2.90",
+    "sounddevice>=0.4.6",
+    "SpeechRecognition>=3.10.0",
+    "openai-whisper>=20231117",
+    # whisper 音频重采样
+    "scipy>=1.11.0",
+]
 # pip install uiu[rag] — 本地向量记忆（拖 torch ~2GB + 首次下载模型）
 rag = ["chromadb>=0.4.0", "sentence-transformers>=2.2.0"]
 # pip install uiu[all] — 全部重依赖

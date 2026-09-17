@@ -1,6 +1,6 @@
 {
   "name": "uiu-agent",
-  "version": "0.1.5",
+  "version": "0.1.7",
   "description": "Minimal personal-IP agent — installs its own embedded Python runtime, no Python needed",
   "bin": {
     "uiu": "bin/uiu.js",

@@ -497,6 +497,14 @@ def cmd_config(args) -> int:
         for k, v in sorted(parse_env_file(env_path).items()):
             shown = v if args.show_values else (v[:4] + "…" + v[-2:] if len(v) > 10 else "(set)")
             print(f"  {k} = {shown}")
+        # 密钥列表本身不依赖 config.yaml，但配置坏掉时不能假装一切正常：
+        # 静默返回 0 会让人以为配置没问题（与 uiu show 的 rc=2 行为也不一致）。
+        if config_yaml_path(ws).exists():
+            try:
+                load_config(ws)
+            except Exception as exc:
+                _print_err(f"config.yaml 无法解析，请先修复（uiu doctor --fix）：{exc}")
+                return 2
         return 0
 
     print("usage: uiu config [--api-key KEY | --set-secret K=V | --unset-secret K | "

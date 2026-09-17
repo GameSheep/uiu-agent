@@ -1,7 +1,9 @@
 """Tests for autonomous UI recovery and interruption handling."""
 
+import importlib.util as _importlib_util
 import json
 import numpy as np
+import pytest
 from unittest.mock import patch
 from uiu.auto_recovery import (
     wait_screen_stable,
@@ -18,6 +20,10 @@ def test_wait_screen_stable_immediate():
         assert ok is True
 
 
+@pytest.mark.skipif(
+    _importlib_util.find_spec("uiautomation") is None,
+    reason="该用例专门验证「UIA 失败后回退到视觉识别」，需要 uiautomation：pip install uiu[desktop]",
+)
 def test_detect_modal_dialog_vision():
     mock_btn = {"cx": 200, "cy": 150, "text": "取消"}
     with patch("uiautomation.GetRootControl", side_effect=Exception("no uia")), \

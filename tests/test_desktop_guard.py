@@ -135,8 +135,10 @@ def test_cron_run_job_sets_cron_context(tmp_path, monkeypatch):
     assert "cron:" in captured_contexts[0][1]
 
 
-def test_daemon_status(tmp_path):
+def test_daemon_status(tmp_path, monkeypatch):
     """Verifies status_daemon query."""
+    # 守护进程状态目录默认在 ~/.uiu，测试必须重定向（受限环境家目录不可写）
+    monkeypatch.setenv("UIU_HOME", str(tmp_path / "uiu-home"))
     from uiu.daemon import status_daemon
     status = status_daemon(tmp_path)
     assert "running" in status

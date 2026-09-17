@@ -45,6 +45,19 @@ test_send.py
 *.png
 # generated TUI previews: SVG 可入库（docs/tui-tour.md 直接引用），PNG 是本地渲染产物
 docs/preview/*.png
+
+# test/CLI scratch dirs (environment fallbacks, never committed)
+.pytest-tmp/
+.uiu-smoke/
+.pytest_cache/
+
+# 本机 mkdir(mode=0o700) 产生的不可读目录：内容无法读取，删除需要管理员权限。
+# 列在这里只是让 git 别再反复报 "could not open directory"。
+.pytest_tmp/
+mm_700/
+zz700b/
+tmp_pytest/
+acl_probe/
 *_out.txt
 windows_list.txt
 send_result.txt

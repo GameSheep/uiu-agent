@@ -1002,9 +1002,12 @@ def test_dropped_actions_explain_themselves(tmp_path):
 
 
 async def _impl_dropped_feedback(tmp_path):
+    # 回合要开得足够久：这条测试的前提是「回合进行中」，慢机器上 0.9s 会在断言之间就结束
+    TURN_SECONDS = 4.0
+
     def runner(*, client, messages, tool_schemas, skills, model, cfg, emit, cancel):
-        time.sleep(0.9)
-        emit(TurnDone("ok", 0.9))
+        time.sleep(TURN_SECONDS)
+        emit(TurnDone("ok", TURN_SECONDS))
 
     ws = make_ws(tmp_path)
     from uiu import sessions as S
@@ -1020,22 +1023,35 @@ async def _impl_dropped_feedback(tmp_path):
         composer.focus_input()
         await pilot.press("x")
         await pilot.press("enter")
-        await pilot.pause(0.25)
+        for _ in range(20):
+            if app._turn_running:
+                break
+            await pilot.pause(0.1)
+        assert app._turn_running, "precondition: a turn must be in flight"
 
+        st.toast = ""                       # 只断言「本次操作」产生的反馈
         await app._send("第二条消息")
         await pilot.pause(0.2)
+        assert app._turn_running
         assert "正在回复" in st.toast, st.toast
         assert st.toast_kind == "error"
 
+        st.toast = ""
         await app._on_session_picked("another")
         await pilot.pause(0.2)
+        assert app._turn_running
         assert "切会话" in st.toast, st.toast
 
+        st.toast = ""
         await app.action_new_chat()
         await pilot.pause(0.2)
+        assert app._turn_running
         assert "新会话" in st.toast, st.toast
 
-        await pilot.pause(1.2)
+        for _ in range(60):
+            if not app._turn_running:
+                break
+            await pilot.pause(0.2)
         assert app._session_name == "default"
         assert sum(1 for m in app._messages if m.get("role") == "user") == 1
 
@@ -1086,3 +1102,96 @@ async def _impl_corrupt_banner(tmp_path):
         assert app._recent_session() == {} or isinstance(app._recent_session(), dict)
         from uiu.app.widgets import WelcomeBanner
         assert app.query_one("#chat", ChatView).query_one("#empty-hint", WelcomeBanner)
+
+
+# --------------------------------------------------------------------------
+# 14. guards for the exact classes of bug that forced extra rounds
+# --------------------------------------------------------------------------
+
+
+def test_scrollbar_position_tracks_scrolling(tmp_path):
+    """覆写 watch_scroll_y 漏掉 super() 会让滚动条位置/锚点/重绘全部失效。"""
+    return _run(_impl_scrollbar_tracks(tmp_path))
+
+
+async def _impl_scrollbar_tracks(tmp_path):
+    ws = make_ws(tmp_path)
+    msgs = [{"role": "system", "content": "s"}]
+    for i in range(60):
+        msgs.append({"role": "user", "content": f"问题 {i}"})
+        msgs.append({"role": "assistant", "content": f"回答 {i}"})
+    app = UiuApp(_Stub(), ws, model="m", cfg=None, app_cfg=None)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause(0.3)
+        chat = app.query_one("#chat", ChatView)
+        app._messages = list(msgs)
+        await chat.load_transcript(msgs[1:])
+        for _ in range(60):
+            if chat.query(Bubble):
+                break
+            await pilot.pause(0.2)
+        assert chat.show_vertical_scrollbar, "long transcript must show a scrollbar"
+        chat.scroll_to(y=120, animate=False)
+        await pilot.pause(0.4)
+        assert abs(chat.vertical_scrollbar.position - chat.scroll_offset.y) <= 1, (
+            chat.vertical_scrollbar.position, chat.scroll_offset.y)
+
+
+def test_programmatic_scroll_does_not_autoload(tmp_path):
+    """重建/程序化滚动会让 scroll_y 归零，不能因此连环补页。"""
+    return _run(_impl_no_spurious_autoload(tmp_path))
+
+
+async def _impl_no_spurious_autoload(tmp_path):
+    ws = make_ws(tmp_path)
+    msgs = [{"role": "system", "content": "s"}]
+    for i in range(90):
+        msgs.append({"role": "user", "content": f"问题 {i}"})
+        msgs.append({"role": "assistant", "content": f"回答 {i}"})
+    app = UiuApp(_Stub(), ws, model="m", cfg=None, app_cfg=None)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause(0.3)
+        chat = app.query_one("#chat", ChatView)
+        app._messages = list(msgs)
+        await chat.load_transcript(msgs[1:])
+        for _ in range(60):
+            if chat.query("#folded-hint"):
+                break
+            await pilot.pause(0.2)
+        assert chat.window == ChatView.MAX_LIVE
+        chat.scroll_to(y=0, animate=False)       # 程序化，不是用户滚动
+        await pilot.pause(1.0)
+        assert chat.window == ChatView.MAX_LIVE, "programmatic scroll must not page in history"
+        # 而用户真的上滚时要加载
+        chat.on_mouse_scroll_up(None)
+        chat.scroll_to(y=0, animate=False)
+        for _ in range(60):
+            if chat.window > ChatView.MAX_LIVE:
+                break
+            await pilot.pause(0.25)
+        assert chat.window == ChatView.MAX_LIVE + ChatView.PAGE
+
+
+def test_command_output_stays_preformatted(tmp_path):
+    """命令输出若交给 markdown 当普通换行处理，会被重排成一整段。"""
+    return _run(_impl_output_preformatted(tmp_path))
+
+
+async def _impl_output_preformatted(tmp_path):
+    ws = make_ws(tmp_path)
+    app = UiuApp(_Stub(), ws, model="m", cfg=None, app_cfg=None)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause(0.3)
+        await app._send("/tools")
+        for _ in range(30):
+            if app.query(OutputRow):
+                break
+            await pilot.pause(0.2)
+        row = app.query(OutputRow).first()
+        assert row.get_text().lstrip().startswith("```"), "output must be fenced"
+        row.on_click()
+        await pilot.pause(0.4)
+        body = row.query_one("#md-body")
+        rendered = body.size.height
+        assert rendered <= row.lines + 12, (
+            f"rendered {rendered} rows for {row.lines} lines of output — markdown reflowed it")

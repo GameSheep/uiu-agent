@@ -99,6 +99,22 @@ npm view uiu-agent version                    # 期望 0.2.0-b1
 powershell -ExecutionPolicy Bypass -File ..\scripts\verify_npm_install.ps1
 ```
 
+**发布产物级验收（推荐，能进 CI 且不依赖 npm 的全局安装）**：直接解包 `npm pack` 出来的
+tarball，按 npm 的布局摆好，然后跑 postinstall 与启动器——验证的是**用户真正拿到的东西**：
+
+```powershell
+$prefix = "<临时目录>"; New-Item -ItemType Directory "$prefix\node_modules" -Force
+cd npm; npm pack --pack-destination $prefix
+tar -xzf "$prefix\uiu-agent-0.2.0-b1.tgz" -C "$prefix\node_modules"; Rename-Item "$prefix\node_modules\package" "$prefix\node_modules\uiu-agent"
+$env:UIU_HOME = "$prefix\home"
+node "$prefix\node_modules\uiu-agent\bin\install.js"        # = postinstall
+node "$prefix\node_modules\uiu-agent\bin\uiu.js" version     # 期望 uiu 0.2.0b1
+```
+
+> 这一步抓出过一个真 bug：`package.json` 的 `files` 白名单曾经只有 `["bin/"]`，
+> 于是 `lib/version.js` 不随包发布 → 用户装完 `require` 失败。现在由
+> `tests/test_npm_package.py` 守着（tarball 必须覆盖运行时 require 的每个文件）。
+
 > 中国网络环境可加镜像：`$env:UIU_PIP_INDEX="https://pypi.tuna.tsinghua.edu.cn/simple"`；
 > 内置 Python 下载可走 `UIU_PYTHON_MIRROR`。
 

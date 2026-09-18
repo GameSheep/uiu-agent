@@ -19,6 +19,13 @@
 - **网关默认鉴权**：默认只绑 `127.0.0.1`；无 `UIU_GATEWAY_TOKEN` 时拒绝非本机监听（需显式
   `UIU_GATEWAY_INSECURE=1` 才放行并告警）；新增 `uiu serve --host`；通用 webhook 的 secret 改为必填；
   `uiu doctor` 新增可自动修复的 `channel/gateway-no-token`。
+- **npm 包内容修复（会让 npm 通道彻底不可用）**：`package.json` 的 `files` 白名单只有 `["bin/"]`，
+  而 `bin/install.js` 要 `require("../lib/version")` → 用户 `npm install` 拿到 tarball 后
+  **MODULE_NOT_FOUND，装不上**。已补 `lib/`，并新增 `tests/test_npm_package.py`（4 条）：
+  tarball 必须覆盖运行时 require 的每个文件、bin 入口存在且有 shebang、postinstall 钩子、
+  版本映射随包发出且自检通过。
+- **npm 通道端到端（发布产物级）**：解包 `npm pack` 出来的 tarball → 跑 postinstall → 启动器
+  `uiu version`/`--json`，全部通过（见 docs/release-checklist.md ⑥）。
 - **端到端闭环（桩模型）**：新增 `tests/test_e2e_stub_llm.py`——本地 OpenAI 兼容桩服务器
   在 CI 里真跑「模型 → 工具 schema → tools.call_tool → 安全守卫 → 审计留痕 → 结果回灌」，
   不花钱、不联网、结果确定；真 key 的 `live` 用例继续负责「真实报文兼容性」。

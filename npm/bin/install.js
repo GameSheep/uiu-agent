@@ -16,6 +16,7 @@
 "use strict";
 
 const { spawnSync } = require("child_process");
+const { pep440 } = require("../lib/version");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
@@ -229,7 +230,13 @@ async function ensureVenv(python) {
 function ensureUiuPackage(venvPython) {
   // pip install uiu pinned to the npm package version (npm & PyPI release in lockstep)
   const index = process.env.UIU_PIP_INDEX;
-  const pkg = process.env.UIU_PIP_PACKAGE || `uiu==${require("../package.json").version}`;
+  // npm 的预发布号（0.2.0-b1）不能直接喂给 pip，必须先转成 PEP 440（0.2.0b1）。
+  const npmVersion = require("../package.json").version;
+  const pyVersion = pep440(npmVersion);
+  const pkg = process.env.UIU_PIP_PACKAGE || `uiu==${pyVersion}`;
+  if (pyVersion !== npmVersion) {
+    log(`version mapping: npm ${npmVersion} → PyPI ${pyVersion}`);
+  }
   const args = ["-m", "pip", "install", "--quiet", "--disable-pip-version-check"];
   if (index) args.push("-i", index);
   args.push(pkg);

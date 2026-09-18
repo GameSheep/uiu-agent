@@ -36,6 +36,7 @@
 | [docs/tui-tour.md](docs/tui-tour.md) | 界面导览（11 个界面配图） |
 | [docs/audit-2026-09-16-product-gap.md](docs/audit-2026-09-16-product-gap.md) | 产品级差距审计与实施进度 |
 | [docs/product-readiness-2026-09-18.md](docs/product-readiness-2026-09-18.md) | **产品完成度评估（PM 视角）**：评分、发布阻断项、风险、决策建议 |
+| [docs/release-checklist.md](docs/release-checklist.md) | **发版清单**：PyPI + npm 双通道的可复制命令与发布后验收 |
 
 ## 屏幕自动化（OCR 点击，不需要视觉模型）
 

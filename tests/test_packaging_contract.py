@@ -208,21 +208,61 @@ def test_core_imports_do_not_need_optional_extras(monkeypatch):
 # --------------------------------------------------------------------------
 
 
+PEP440_RE = re.compile(r"^\d+\.\d+\.\d+(?:(?:a|b|rc)\d+)?$")
+
+
+def _npm_pep440(npm_version: str) -> str:
+    """调 npm 侧**同一个**映射函数把 semver 转成 PEP 440。
+
+    刻意不在这里复刻一份规则：两份实现早晚会漂。没装 node 就跳过并说明原因，
+    而不是用一个「看起来一样」的 fallback 假装验证过。
+    """
+    import shutil
+    import subprocess
+
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("本机没有 node，跳过 npm↔PyPI 版本映射校验")
+    script = ("const {pep440} = require(%s);process.stdout.write(pep440(%s));"
+              % (json.dumps(str(ROOT / "npm" / "lib" / "version.js")),
+                 json.dumps(npm_version)))
+    proc = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=60)
+    assert proc.returncode == 0, f"npm 版本映射失败: {proc.stderr[:200]}"
+    return proc.stdout.strip()
+
+
 def test_version_is_single_source():
     version = _project()["version"]
-    assert re.fullmatch(r"\d+\.\d+\.\d+", version), version
+    assert PEP440_RE.fullmatch(version), (
+        f"版本号必须符合 PEP 440（预发布写成 0.2.0b1，不是 0.2.0-beta.1）：{version}")
 
     import uiu
 
     assert uiu.__version__ == version, f"__init__ {uiu.__version__} != pyproject {version}"
 
     npm = json.loads((ROOT / "npm" / "package.json").read_text(encoding="utf-8"))
-    assert npm["version"] == version, f"npm {npm['version']} != pyproject {version}"
+    # npm 侧是 semver（0.2.0-b1），PyPI 侧是 PEP 440（0.2.0b1）——不能直接相等，
+    # 但必须能被 install.js 用的那个映射函数对上，否则 pip 会装不到包。
+    assert _npm_pep440(npm["version"]) == version, (
+        f"npm {npm['version']} 映射后 != pyproject {version}")
 
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-    released = re.findall(r"^## \[([0-9]+\.[0-9]+\.[0-9]+)\]", changelog, re.M)
+    released = re.findall(r"^## \[(\d+\.\d+\.\d+(?:(?:a|b|rc)\d+)?)\]", changelog, re.M)
     assert released, "CHANGELOG 里没有已发布版本小节"
     assert version in released, f"CHANGELOG 最新已发布版本 {released[0]} != pyproject {version}"
+
+
+def test_npm_version_mapper_self_test():
+    """npm/lib/version.js 自带映射用例表，跑它（预发布版本发 PyPI 时最容易踩的坑）。"""
+    import shutil
+    import subprocess
+
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("本机没有 node")
+    proc = subprocess.run([node, str(ROOT / "npm" / "lib" / "version.js")],
+                          capture_output=True, text=True, timeout=60)
+    assert proc.returncode == 0, f"版本映射自检失败:\n{proc.stdout}\n{proc.stderr}"
 
 
 # --------------------------------------------------------------------------

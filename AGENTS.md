@@ -26,9 +26,15 @@ See @README.md for project overview and @package.json for available npm/pnpm com
 - 跑测试：`.venv\Scripts\python.exe -m pytest tests -q`（`tests/conftest.py` 会自动处理本机
   `mkdir(mode=0o700)` 生成拒绝访问目录的问题，无需自定义 runner）。
 - 冒烟：`.venv\Scripts\python.exe cli_smoke.py`（自带临时目录回退）。
+- **CLI 代码分布**：`commands.py` 只是门面（再导出），实现按域拆在 `cli_shared.py`（通用工具）/
+  `cli_basic.py`（init·show·version·audit·backup·restore·trash）/ `cli_model.py`（model·config·plugins）/
+  `cli_channels.py` / `cli_skills.py` / `cli_sessions.py`（sessions·macro·quick）/
+  `cli_automation.py`（cron·daemon）/ `cli_ops.py`（doctor·update·publish·serve）。加命令请放到对应域，
+  并保持门面再导出（`from uiu.commands import cmd_x` 不能断）。
 - 覆盖率（需先 `pip install -e ".[test]"`，CI 会跑并卡门槛）：
-  `.venv\Scripts\python.exe -m pytest tests -q --cov=uiu --cov-report=term-missing --cov-fail-under=50`
-  基线 50（2026-09-17 实测 53.5%）。只保证不回退；新增代码请自带测试，阈值随轮次抬高。
+  `.venv\Scripts\python.exe -m pytest tests -q --cov=uiu --cov-report=term-missing --cov-fail-under=58`
+  基线 58（2026-09-18 用真 coverage.py 实测 **60.2%**）。只保证不回退；新增代码请自带测试。
+  当前零覆盖仅剩 `skill_installer.py`、`safe_update.py` 两个文件。
 - 真 LLM 端到端（**默认跳过**，会真实花钱）：设 `UIU_E2E_LIVE=1` 后
   `.venv\Scripts\python.exe -m pytest tests/test_e2e_live_llm.py -q -m live`；
   验证的是「模型→工具→守卫→审计」整条链路，没有 key 或没开开关都会 skip。
@@ -36,6 +42,10 @@ See @README.md for project overview and @package.json for available npm/pnpm com
   界面导览见 `docs/tui-tour.md`。
 
 ## 已知环境限制
+- **pip / 一切 `mkdtemp` 工具在这台机器上会失败**（`mkdir(mode=0o700)` 被落成 deny ACL）。
+  解法：`$env:PYTHONPATH="<repo>\.shim"` 后再跑（`.shim/sitecustomize.py` 把 mode 归一化成 0o777），
+  并把 `TEMP/TMP` 指到普通目录（如 `<repo>\.piptmp`）。装包时再用国内镜像：
+  `-i https://pypi.tuna.tsinghua.edu.cn/simple`。**这是环境 workaround，不是产品代码。**
 - **`mkdir(mode=0o700)` 会生成自己都写不进去的目录**（本机 Windows + 沙箱把 mode 落成 deny ACL，
   `icacls` 都读不了）。pytest 的 tmp_path、`tempfile.mkdtemp` 都踩这个坑；`tests/conftest.py`
   与 `cli_smoke.py` 已各自兜底。若残留不可读目录（`.pytest_tmp/`、`mm_700/`、`tmp_pytest/`），
@@ -52,6 +62,10 @@ See @README.md for project overview and @package.json for available npm/pnpm com
 - 测试里调用 `uiu.main.main()` 时，**不要让该 workspace 的 `.env` 含真实密钥名**
   （`main()` 会把 `.env` 载入 `os.environ`，会污染同进程后续测试 —— doctor 的 no-api-key
   检查曾因此误判）。用 `SMOKE_TOKEN=...` 这类中性名字。
+- **不要在跑全量测试的同时改源码**：pytest 边收集边导入，改到一半的文件会被读到，
+  产生假失败（我就这么污染过一次覆盖率统计）。先跑完、再改、再跑。
+- 从 git 历史重新生成文件（如按域拆分）时要留意：**未提交的改动会丢**。本轮把 `commands.py`
+  按域拆分时就用了 `git show HEAD:`，结果把还没提交的路径统一改动冲掉了。
 - 测试不要依赖墙上时间：需要「回合进行中」就先断言 `app._turn_running`，并把假回合的 sleep 放长；
   需要断言「本次反馈」就先清掉上一条 toast。慢机器上 0.9s 的回合会在两行断言之间就结束。
 

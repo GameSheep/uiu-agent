@@ -11,6 +11,7 @@ Enables seamless attachment to the user's everyday Chrome, Edge, Brave, and othe
 
 from __future__ import annotations
 
+
 import atexit
 import json
 import os

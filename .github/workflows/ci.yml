@@ -14,8 +14,9 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install (core + test extras)
-        run: pip install -e ".[test]"
+      - name: Install (core + test + browser extras)
+        # [browser] 带上 playwright，否则 tests/test_browser_*.py 会被整模块 skip
+        run: pip install -e ".[test,browser]"
 
       - name: Byte-compile all sources
         run: python -m compileall -q src
@@ -25,7 +26,7 @@ jobs:
 
       # 覆盖率门禁：只保证不低于已记录基线（见审计 §6.1），随轮次抬高
       - name: Coverage gate (baseline, no regressions)
-        run: python -m pytest tests/ -q --cov=uiu --cov-report=term-missing --cov-fail-under=30
+        run: python -m pytest tests/ -q --cov=uiu --cov-report=term-missing --cov-fail-under=58
 
       - name: CLI smoke (offline, isolated workspace)
         run: python cli_smoke.py

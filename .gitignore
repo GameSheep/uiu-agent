@@ -51,6 +51,13 @@ docs/preview/*.png
 .uiu-smoke/
 .pytest_cache/
 
+# 本机环境 workaround 的临时区（.shim 要提交，其余不入库）
+.piptmp/
+wheelhouse/
+npm_e2e_home/
+tmp_cov.json
+tp_*.txt
+
 # 本机 mkdir(mode=0o700) 产生的不可读目录：内容无法读取，删除需要管理员权限。
 # 列在这里只是让 git 别再反复报 "could not open directory"。
 .pytest_tmp/

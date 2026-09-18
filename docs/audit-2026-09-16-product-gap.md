@@ -45,11 +45,16 @@
 | P2-17 会话生命周期与空间管理 | ✅ 完成 | `sessions_usage`/`prune_sessions`（裁剪进回收站、保守规则、dry-run）；CLI `sessions usage/prune`；TUI 切换器显示占用；配置 `sessions_keep/sessions_max_age_days/sessions_auto_prune`（默认只告警）；doctor `sessions/over-cap`；并把 `list_sessions` 改为按语义时间排序。测试：`tests/test_sessions_lifecycle.py`（15） |
 | P2-15 doctor 覆盖依赖检查 | ✅ 完成 | `_chk_optional_deps` 表驱动体检 5 个可选栈（browser / desktop-uia / voice-tts / voice-stt / rag），给出**可执行的安装命令**；装包需显式 `--fix --install-deps`（默认 `--fix` 不碰 pip——可选栈动辄上百 MB，不该被顺手装上）；缺 `textual`（核心）报 error；UIA 检查只在 Windows 上触发；可选栈缺失为 **info 级**、不影响退出码。测试：`tests/test_doctor_deps.py`（11） |
 | P2-13 破坏性操作可撤销 | ✅ 完成 | `trash.py`（文件类/记录类两种条目、拒绝覆盖、按天清理）+ `uiu trash`；会话/宏/渠道/定时任务删除全部软删除；TUI `Ctrl+Z` 撤销。测试：`tests/test_trash.py`（12） |
+| 浏览器栈测试可运行 | ✅ 完成 | 装 playwright 后 5 个浏览器测试模块（28 用例）**从无法收集变为全绿**；CI 改为安装 `.[test,browser]` 让它们在流水线里真正跑；缺失时仍显式 skip（不假装通过） |
 | P1-12 真 LLM 最小 E2E + 平台支持矩阵 | ✅ 完成 | `tests/test_e2e_live_llm.py`（`live` 标记，默认跳过，验证「模型→工具→守卫→审计」整条链路，已证明非静默跳过）；`docs/platform-support.md`（能力矩阵 + 30 个 Windows 专有模块**扫描生成** + `--check`）；doctor 增 `platform/degraded`。测试：`tests/test_platform_support.py`（6） |
 | P1-10 架构/工具/网关 API 文档 | ✅ 完成 | 新增 `docs/architecture.md`（分层/进程模型/数据流/状态与写入约定/安全模型）、`docs/tools.md`（**生成物**，123 工具按模块分组 + 参数 + 需确认标记 + `--check`）、`docs/gateway-api.md`（端点表/鉴权矩阵/回调样例/返回约定）、`docs/troubleshooting.md`；README 加文档索引并修掉三处假数字。测试：`tests/test_docs_sync.py`（12） |
 | P1-8 路径白名单 + shell 语义确认 + 审计日志 | ✅ 完成 | `classify_path` 三态路径决策（白名单/越界确认/凭据拒绝）；`classify_command` 语义分级（只读放行，写/网络/进程/系统/包管理/解释器/未知一律确认，破坏性拒绝）；确认框显示完整命令+cwd；`audit.py` append-only JSONL（脱敏、滚动）+ `uiu audit`。测试：`tests/test_security_policy.py`（48）。**未做**：本次会话内允许同类（有意保留每次确认） |
 | P1-9 schema 版本 + 迁移 + 备份恢复 | ✅ 完成 | `schema.py`：config/session/jobs 带版本号并读时迁移（jobs 是真实结构变更，迁移在锁内做）；`backup.py` + `uiu backup/restore`：滚动 7 份、恢复前快照可撤销、拒绝 zip-slip、daemon 每日自动备份。测试：`test_schema_migration.py`(11) + `test_backup_restore.py`(11) |
-| P1-7 覆盖率基线 | ✅ 完成 | 实测 53.5%；CI 门禁 `--cov-fail-under=50`；零覆盖模块与最弱 10 个已记录（见 §6.1） |
+| P1-7 覆盖率基线 | ✅ 完成 | 真 coverage.py 实测 **60.2%**；CI 门禁 `--cov-fail-under=58`；零覆盖文件从 6 → 2（见 §6.1） |
+| commands.py 拆分 | ✅ 完成 | 1,676 行上帝模块 → **99 行门面** + 7 个域模块（`cli_basic/model/channels/skills/sessions/automation/ops`，141–422 行）+ 61 行 `cli_shared`；`from uiu.commands import cmd_x` 保持可用；全量套件绿 |
+| 浏览器栈测试可运行 | ✅ 完成 | 装 playwright 后 5 模块 28 用例全绿；CI 改 `.[test,browser]` |
+| ~/.uiu 路径单点化 | ✅ 完成 | 新增 `uiu.paths`（`UIU_HOME` 可重定向），18 处硬编码替换；加扫描闸门测试防回退 |
+| npm 安装壳端到端 | ✅ 完成（含 2 个真 bug 修复） | 修「不跟 302 跳转」与「系统 Python 探测依赖管道」；加固：只用 CI 覆盖过的 Python 版本 + venv 失败退化；新增 `scripts/verify_npm_install.ps1` |
 | 版本单一来源 | ✅ 完成 | npm 0.1.5 → 0.1.7；`test_version_is_single_source` 锁定 pyproject/__init__/npm/CHANGELOG |
 
 ### 审计更正（2026-09-17）
@@ -272,8 +277,14 @@ Chrome User Data/Firefox Profiles/Windows Credentials/`.uiu` 等）与系统目�
 **已修复（round 6）**：`[test]` extra 加 `coverage` + `pytest-cov`；`[tool.coverage.*]` 配好
 source/omit/exclude；CI 增加 `--cov=uiu --cov-report=term-missing --cov-fail-under=50` 门禁。
 
-**实测基线（2026-09-17，本机无法装 coverage，用 stdlib settrace 采集器跑全量套件近似得到）**：
-`src/uiu` 语句覆盖 **8000/14952 = 53.5%**。CI 门槛设为 **50**（留 ~3.5pt 余量只防回退）。
+**实测基线（2026-09-18，用真 `coverage.py`）**：`src/uiu` 语句覆盖
+**10709/17787 = 60.2%**（此前用 stdlib 采集器估算的 53.5% 偏低，因为浏览器测试当时整模块被 skip）。
+CI 门槛已从 50 → **58**（留 ~2pt 余量只防回退）。
+
+**零覆盖文件从 6 个降到 2 个**：`skill_installer.py`、`safe_update.py`（下一步最容易补的两块）。
+次弱：`uia_locator` 7.0%、`cli_skills` 9.4%、`cli_channels` 11.5%、`askui_tools` 13.2%、
+`channels_dingtalk` 14.9%、`channels_email`/`voice_tools` 15.2%、`channels_discord` 15.5%、
+`channels_slack` 16.1%、`cli_ops` 16.2%。
 
 **零覆盖模块（6 个，共 1066 行）**：`browser_connect.py`(381)、`browser_explorer.py`(160)、
 `safe_update.py`(157)、`browser_self_healing.py`(125)、`skill_installer.py`(107)、`browser_compiler.py`(76)。
@@ -291,6 +302,10 @@ source/omit/exclude；CI 增加 `--cov=uiu --cov-report=term-missing --cov-fail-
 - `test_desktop_guard::test_daemon_status` 因写入 `~/.uiu` 在受限环境失败（测试不 hermetic）。
 - `test_browser_tools::test_browser_tools_with_active_session` 因 `uiu.browser_connect` 未显式导入失败。
 **建议**：补齐依赖声明并分层（浏览器相关进 `[browser]`）；测试 hermetic（home 重定向）；对「本机不支持」的子系统用显式 skip + 原因，而不是让整套失败。
+
+**已修复（round 16）**：依赖分层与 skip 已落地；本轮进一步装上 playwright，5 个浏览器测试模块
+（`test_browser_connect/explorer/self_healing/tools/compiler`，共 28 用例）**全部通过**，
+CI 也改为 `pip install -e ".[test,browser]"`，让这条覆盖在流水线里持续存在。
 
 ### 6.3 无端到端测试 — 重要
 **证据**：CI 只跑离线单测 + CLI 冒烟 + Windows 安装态验收；无真实 LLM、真实浏览器、真实桌面操作的 E2E。
@@ -335,6 +350,18 @@ source/omit/exclude；CI 增加 `--cov=uiu --cov-report=term-missing --cov-fail-
 ### 7.5 分发链路未端到端验证 — 重要
 **现状**：PyPI 0.1.7 可装 ✅；npm 壳（`npm/`）**没有跑通过真实 `npm install`**，且版本号停在 0.1.5。
 **建议**：加一条 release checklist（PyPI + npm 双通道 + 全新机器安装验收），版本号单一来源。
+
+**已修复（round 16）**：资源到位后真跑了 npm 壳的端到端安装，**一次就抓出两个真 bug**：
+① 下载器只认 HTTP 200，而 GitHub release **必然 302 到 CDN** —— 「没有系统 Python」的用户 100% 失败；
+② 系统 Python 探测靠抓 stdout（需要管道），在禁止 Node 建管道的受限环境里抛异常又被吞掉，
+于是「有 Python 也当作没有」，白白去下 100MB。
+另外补了两处加固：系统 Python **只优先用 CI 覆盖过的版本区间（3.10–3.13）**（实测在 3.14 上
+pyautogui 系依赖没有 wheel，pip 转源码构建并失败）；`venv` 失败时退化成 `--without-pip` + 显式
+`ensurepip` 自举（实测在某类受限机器上这样才通）。新增 `scripts/verify_npm_install.ps1` 固化这条验收。
+
+**仍未端到端验证的部分**：`pip install uiu` 会在全新环境拉一整套重依赖（本机实测跑 30 分钟以上仍在
+源码构建），所以「零前置安装」的**完整**链路只在安装器自身逻辑层面验证过（下载→解压→建 venv→调 pip→
+写 marker→启动器），依赖体积/构建时长属于 §2 已记录的「核心依赖偏重」问题。
 
 ---
 

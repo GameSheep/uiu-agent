@@ -27,6 +27,17 @@ Write-Host "built: $($wheel.Name)"
 # 2. fresh venv
 $venv = Join-Path $env:TEMP "uiu-verify-venv-$([guid]::NewGuid().ToString('N').Substring(0,8))"
 & $pyExe -m venv $venv
+if ($LASTEXITCODE -ne 0) {
+    # 有些机器上 venv 自带的 ensurepip 会失败（杀软 / 受限 ACL / 老 Python）。
+    # 退化成「先建空 venv，再显式自举 pip」——与 npm 安装壳里的处理保持一致。
+    Write-Host "plain venv failed — retrying with --without-pip + ensurepip" -ForegroundColor Yellow
+    Remove-Item $venv -Recurse -Force -ErrorAction SilentlyContinue
+    & $pyExe -m venv --without-pip $venv
+    if ($LASTEXITCODE -ne 0) { throw "venv creation failed" }
+    $vp = Join-Path $venv "Scripts\python.exe"
+    & $vp -m ensurepip --upgrade --default-pip
+    if ($LASTEXITCODE -ne 0) { throw "ensurepip failed" }
+}
 $vp = Join-Path $venv "Scripts\python.exe"
 & $vp -m pip install --quiet $wheel.FullName
 if ($LASTEXITCODE -ne 0) { throw "install into fresh venv failed" }

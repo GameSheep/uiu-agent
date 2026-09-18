@@ -54,6 +54,7 @@ def test_readme_tool_count_is_truthful():
     ("gateway-api.md", "鉴权矩阵"),
     ("troubleshooting.md", "故障排查"),
     ("release-checklist.md", "发版清单"),
+    ("privacy.md", "隐私与数据处理"),
 ])
 def test_docs_exist_and_are_substantial(name, needle):
     path = DOCS / name
@@ -65,7 +66,7 @@ def test_docs_exist_and_are_substantial(name, needle):
 
 @pytest.mark.parametrize("name", [
     "architecture.md", "tools.md", "gateway-api.md", "troubleshooting.md", "tui-tour.md",
-    "release-checklist.md", "product-readiness-2026-09-18.md",
+    "release-checklist.md", "product-readiness-2026-09-18.md", "privacy.md",
 ])
 def test_readme_indexes_the_doc(name):
     readme = (ROOT / "README.md").read_text(encoding="utf-8")

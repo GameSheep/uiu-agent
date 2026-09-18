@@ -19,6 +19,14 @@
 - **网关默认鉴权**：默认只绑 `127.0.0.1`；无 `UIU_GATEWAY_TOKEN` 时拒绝非本机监听（需显式
   `UIU_GATEWAY_INSECURE=1` 才放行并告警）；新增 `uiu serve --host`；通用 webhook 的 secret 改为必填；
   `uiu doctor` 新增可自动修复的 `channel/gateway-no-token`。
+- **隐私与数据处理声明**：新增 `docs/privacy.md`（数据存哪 / 发给谁 / 无遥测 / 风险与限制 /
+  清理手段）。**出站主机白名单以该文档为唯一来源**：源码里出现未列出的主机，测试即失败；
+  另有断言按词边界扫描分析 SDK 与上报端点（「无遥测」是测试守着的，不是口号）。
+- **0.2.0b1 版本链路**：新增 `npm/lib/version.js` 做 semver→PEP 440 映射
+  （npm 的 `0.2.0-b1` ↔ PyPI 的 `0.2.0b1`，否则 `pip install uiu==0.2.0-b1` 必然失败）；
+  `test_version_is_single_source` 改为接受预发布版并**调用 node 跑同一个映射函数**比对。
+- **发版清单**：新增 `docs/release-checklist.md`（PyPI + npm 双通道命令、发布后验收、
+  yank/deprecate 回滚手段、本仓库的沙箱与生成物约束）。
 - **依赖分层（首次安装从 30 分钟+ 降到 2 分钟）**：核心依赖从 18 个收到 **8 个**
   （openai/anthropic/rich/prompt-toolkit/textual/pyyaml/psutil/pyperclip）；桌面自动化拆到
   `[desktop]`、屏幕识别到 `[ocr]`、Excel 到 `[office]`、Slack/企微 crypto 到 `[channels]`。

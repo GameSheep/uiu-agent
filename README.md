@@ -37,6 +37,7 @@
 | [docs/audit-2026-09-16-product-gap.md](docs/audit-2026-09-16-product-gap.md) | 产品级差距审计与实施进度 |
 | [docs/product-readiness-2026-09-18.md](docs/product-readiness-2026-09-18.md) | **产品完成度评估（PM 视角）**：评分、发布阻断项、风险、决策建议 |
 | [docs/release-checklist.md](docs/release-checklist.md) | **发版清单**：PyPI + npm 双通道的可复制命令与发布后验收 |
+| [docs/privacy.md](docs/privacy.md) | **隐私与数据处理**：数据存哪 / 发给谁 / 无遥测 / 风险与限制 / 清理手段 |
 
 ## 屏幕自动化（OCR 点击，不需要视觉模型）
 

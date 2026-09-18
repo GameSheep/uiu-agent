@@ -40,7 +40,82 @@ BLOCKED_SHELL_PATTERNS = [
     re.compile(r":\(\)\s*\{", re.IGNORECASE),  # Fork bomb
     re.compile(r"\bshutdown\b", re.IGNORECASE),
     re.compile(r"\bpoweroff\b", re.IGNORECASE),
+    # 直接写盘 / 覆盖块设备
+    re.compile(r"\bdd\b[^|;&]*\bof\s*=\s*/dev/", re.IGNORECASE),
+    re.compile(r">\s*/dev/(sd|nvme|hd|vd|disk)", re.IGNORECASE),
+    # 备份 / 引导 / 注册表级破坏（勒索软件常用手法）
+    re.compile(r"\bvssadmin\s+delete\s+shadows\b", re.IGNORECASE),
+    re.compile(r"\bwbadmin\s+delete\b", re.IGNORECASE),
+    re.compile(r"\bbcdedit\b", re.IGNORECASE),
+    re.compile(r"\bcipher\s+/w\b", re.IGNORECASE),
+    re.compile(r"\breg\s+delete\s+hklm\b", re.IGNORECASE),
+    re.compile(r"\breg\s+delete\s+hkcr\b", re.IGNORECASE),
+    re.compile(r"\bchmod\s+(-[a-z]+\s+)*-?r[^|;&]*\s777\s+/(\s|$)", re.IGNORECASE),
+    re.compile(r"\bchown\s+-r\b[^|;&]*\s/(\s|$)", re.IGNORECASE),
 ]
+
+# 递归强删 + 危险目标 = 拦截。
+# 之前只拦 rm -rf / 这种锚定根目录的写法，于是 rm -rf ~ / rm -rf /etc /
+# Remove-Item -Recurse -Force C:\Windows 全都能过。这是端到端测试真跑出来的：
+# 桩模型要求执行 rm -rf /tmp/...，命令**真的被执行了**（tests/test_e2e_stub_llm.py）。
+_RECURSIVE_DELETE_PATTERNS = [
+    re.compile(r"\brm\s+(-[a-z]+\s+)*-[a-z]*[rf][a-z]*", re.IGNORECASE),
+    re.compile(r"\brm\s+-[a-z]*\s+.*\s-[a-z]*[rf]", re.IGNORECASE),
+    re.compile(r"\b(rd|rmdir)\s+/s\b", re.IGNORECASE),
+    re.compile(r"\bdel\s+/[fsq]", re.IGNORECASE),
+    # PowerShell：Remove-Item 及别名 ri / rd / rm / del 带 -Recurse 或 -r
+    re.compile(r"\b(remove-item|ri|rd|del|erase|rm)\b[^|;&]*\s-(recurse|r)\b", re.IGNORECASE),
+    re.compile(r"\b(remove-item|ri)\b[^|;&]*-force\b[^|;&]*-recurse\b", re.IGNORECASE),
+]
+# 「删掉整个东西」级别的目标：整盘 / 家目录根 / 系统根
+_EXACT_DANGEROUS = frozenset({
+    "/", "~", ".", "..", "/home", "/users", "/system", "/library", "/applications",
+    "c:", "c:/", "c:\\users", "c:/users", "c:\\documents and settings",
+})
+# 系统目录树：删除其中**任意子路径**都不可逆
+_PREFIX_DANGEROUS = frozenset({
+    "/etc", "/usr", "/bin", "/sbin", "/lib", "/lib64", "/var", "/boot",
+    "/dev", "/proc", "/sys", "/opt", "/root",
+    "c:\\windows", "c:/windows", "c:\\program files", "c:/program files",
+    "c:\\program files (x86)", "c:\\programdata", "c:/programdata",
+})
+# 环境变量形式（%USERPROFILE% 与 PowerShell 的 env: 引用）
+_ENV_HOME_VARS = frozenset({
+    "userprofile", "systemroot", "windir", "homedrive", "homepath",
+    "appdata", "programdata", "home",
+})
+_ENV_VAR_RE = re.compile(r"^\$\{?env:([a-z0-9_]+)\}?$")
+
+
+def _dangerous_target(cmd: str) -> bool:
+    for token in re.split(r"\s+", cmd.strip().lower()):
+        t = token.strip("'\"").rstrip("*").rstrip("/\\")
+        if not t:
+            continue
+
+        env_form = False
+        if t.startswith("%") and t.endswith("%"):
+            t, env_form = t.strip("%"), True
+        m = _ENV_VAR_RE.match(t)
+        if m:
+            t, env_form = m.group(1), True
+        if env_form and t in _ENV_HOME_VARS:
+            return True
+
+        if len(t) == 2 and t[1] == ":" and t[0].isalpha():     # 裸盘符 c:
+            return True
+        if t in _EXACT_DANGEROUS or t in _PREFIX_DANGEROUS:
+            return True
+        for root in _PREFIX_DANGEROUS:                         # 系统目录的子路径
+            if t.startswith(root + "/") or t.startswith(root + "\\"):
+                return True
+    return False
+
+
+def _recursive_delete_of_dangerous_target(cmd: str) -> bool:
+    if not any(p.search(cmd) for p in _RECURSIVE_DELETE_PATTERNS):
+        return False
+    return _dangerous_target(cmd)
 
 # Sensitive credentials and system critical targets
 BLOCKED_PATH_PATTERNS = [
@@ -136,6 +211,9 @@ def classify_command(command: str) -> tuple[RiskLevel, str]:
     for pat in BLOCKED_SHELL_PATTERNS:
         if pat.search(low):
             return RiskLevel.BLOCKED, f"检测到系统级高危破坏性指令: {cmd[:80]}"
+    if _recursive_delete_of_dangerous_target(cmd):
+        return (RiskLevel.BLOCKED,
+                f"递归强删指向不可逆目标（整盘/家目录/系统目录）: {cmd[:80]}")
 
     categories: set[str] = set()
     for segment in _segments(cmd):

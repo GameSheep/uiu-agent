@@ -19,6 +19,14 @@
 - **网关默认鉴权**：默认只绑 `127.0.0.1`；无 `UIU_GATEWAY_TOKEN` 时拒绝非本机监听（需显式
   `UIU_GATEWAY_INSECURE=1` 才放行并告警）；新增 `uiu serve --host`；通用 webhook 的 secret 改为必填；
   `uiu doctor` 新增可自动修复的 `channel/gateway-no-token`。
+- **端到端闭环（桩模型）**：新增 `tests/test_e2e_stub_llm.py`——本地 OpenAI 兼容桩服务器
+  在 CI 里真跑「模型 → 工具 schema → tools.call_tool → 安全守卫 → 审计留痕 → 结果回灌」，
+  不花钱、不联网、结果确定；真 key 的 `live` 用例继续负责「真实报文兼容性」。
+- **安全加固（端到端测试查出来的）**：递归强删此前只拦 `rm -rf /`，`rm -rf ~`、`rm -rf /etc`、
+  `Remove-Item -Recurse -Force C:\Users`、`$env:USERPROFILE` 形态全部放行（实测真的执行了）。
+  现在「递归强删 × 危险目标（整盘/家目录根/系统目录树）」一律 BLOCKED，并补 `dd of=/dev/*`、
+  `vssadmin delete shadows`、`bcdedit`、`cipher /w`、`reg delete HKLM`、`chmod -R 777 /`；
+  正常清理（`rm -rf ./build`）不受影响。
 - **隐私与数据处理声明**：新增 `docs/privacy.md`（数据存哪 / 发给谁 / 无遥测 / 风险与限制 /
   清理手段）。**出站主机白名单以该文档为唯一来源**：源码里出现未列出的主机，测试即失败；
   另有断言按词边界扫描分析 SDK 与上报端点（「无遥测」是测试守着的，不是口号）。

@@ -263,3 +263,51 @@ def test_cli_audit_prints_events(tmp_path, capsys):
     payload = json.loads(capsys.readouterr().out)
     assert payload["command"] == "audit"
     assert payload["data"]["events"][0]["tool"] == "read_file"
+
+
+# --------------------------------------------------------------------------
+# 递归强删的危险目标（P1-8 加固：端到端测试真跑出来过的缺口）
+# --------------------------------------------------------------------------
+
+_DESTRUCTIVE_CASES = [
+    "rm -rf /", "rm -rf ~", "rm -rf /etc", "rm -rf .", "rm -rf ../",
+    "rm -rf /var/lib", "sudo rm -rf /usr/local", "rm -rf /boot",
+    "rd /s /q C:\\Windows", "rmdir /s C:\\",
+    "Remove-Item -Recurse -Force C:\\Windows",
+    "Remove-Item -Recurse -Force C:\\Users",
+    "ri -r -fo %USERPROFILE%",
+    "Remove-Item -Recurse -Force $env:USERPROFILE",
+    "del /f /s /q C:\\Users",
+    "dd if=/dev/zero of=/dev/sda",
+    "vssadmin delete shadows /all",
+    "bcdedit /set safeboot minimal",
+    "reg delete HKLM\\SOFTWARE\\Foo",
+    "chmod -R 777 /",
+]
+
+_ALLOWED_CASES = [
+    "rm -rf ./build", "rm -rf /tmp/uiu-probe", "rm -rf node_modules",
+    "Remove-Item -Recurse -Force .\\dist", "del /q .\\tmp.txt",
+    "del /f /s /q .\\build\\*", "git status", "pip install -e .",
+]
+
+
+@pytest.mark.parametrize("cmd", _DESTRUCTIVE_CASES)
+def test_destructive_targets_are_blocked(cmd):
+    """递归强删只要指向整盘/家目录/系统目录就必须 BLOCKED，而不是「确认一下」。"""
+    risk, why = classify_command(cmd)
+    assert risk == RiskLevel.BLOCKED, f"{cmd} 被判为 {risk.value}（{why}）"
+
+
+@pytest.mark.parametrize("cmd", _ALLOWED_CASES)
+def test_normal_cleanup_is_not_blocked(cmd):
+    """正常开发操作不能被误拦（删自己的 build/临时目录是合理需求）。"""
+    risk, _ = classify_command(cmd)
+    assert risk != RiskLevel.BLOCKED, f"{cmd} 被误拦成 BLOCKED"
+
+
+def test_destructive_reason_is_actionable():
+    """拦截理由要能说明白是哪种高危，而不是一句笼统的「危险」。"""
+    risk, why = classify_command("rm -rf /etc")
+    assert risk == RiskLevel.BLOCKED
+    assert "系统目录" in why or "不可逆" in why, why

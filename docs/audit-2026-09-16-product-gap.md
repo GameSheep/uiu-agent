@@ -53,10 +53,11 @@
 | P1-12 真 LLM 最小 E2E + 平台支持矩阵 | ✅ 完成 | `tests/test_e2e_live_llm.py`（`live` 标记，默认跳过，验证「模型→工具→守卫→审计」整条链路，已证明非静默跳过）；`docs/platform-support.md`（能力矩阵 + 30 个 Windows 专有模块**扫描生成** + `--check`）；doctor 增 `platform/degraded`。测试：`tests/test_platform_support.py`（6） |
 | P1-10 架构/工具/网关 API 文档 | ✅ 完成 | 新增 `docs/architecture.md`（分层/进程模型/数据流/状态与写入约定/安全模型）、`docs/tools.md`（**生成物**，123 工具按模块分组 + 参数 + 需确认标记 + `--check`）、`docs/gateway-api.md`（端点表/鉴权矩阵/回调样例/返回约定）、`docs/troubleshooting.md`；README 加文档索引并修掉三处假数字。测试：`tests/test_docs_sync.py`（12） |
 | P1-8 路径白名单 + shell 语义确认 + 审计日志 | ✅ 完成 | `classify_path` 三态路径决策（白名单/越界确认/凭据拒绝）；`classify_command` 语义分级（只读放行，写/网络/进程/系统/包管理/解释器/未知一律确认，破坏性拒绝）；确认框显示完整命令+cwd；`audit.py` append-only JSONL（脱敏、滚动）+ `uiu audit`。测试：`tests/test_security_policy.py`（48）。**未做**：本次会话内允许同类（有意保留每次确认） |
+| shell 破坏性拦截加固（E2E 发现） | ✅ 完成 | 递归强删此前只拦 `rm -rf /`；`rm -rf ~`/`/etc`/`/var/lib`、`Remove-Item -Recurse -Force C:\Users`、`del /f /s /q C:\Users`、`$env:USERPROFILE` 形态**实测全部放行并真的执行了**。现在「递归强删 × 危险目标（整盘/家目录根/系统目录树，含环境变量形式）」= BLOCKED，另补 `dd of=/dev/*`、`> /dev/sd*`、`vssadmin delete shadows`、`bcdedit`、`cipher /w`、`reg delete HKLM`、`chmod -R 777 /`；`rm -rf ./build` 这类正常清理不误伤。29 条分类用例进测试 |
+| E2E 闭环（桩模型，CI 可跑） | ✅ 完成 | `tests/test_e2e_stub_llm.py`：本地 OpenAI 兼容桩在 CI 里真跑「模型 → schema → call_tool → 守卫 → 审计 → 结果回灌」；真 key 的 `live` 用例保留负责真实报文兼容性。**上面的拦截缺口就是它跑出来的** |
 | P1-9 schema 版本 + 迁移 + 备份恢复 | ✅ 完成 | `schema.py`：config/session/jobs 带版本号并读时迁移（jobs 是真实结构变更，迁移在锁内做）；`backup.py` + `uiu backup/restore`：滚动 7 份、恢复前快照可撤销、拒绝 zip-slip、daemon 每日自动备份。测试：`test_schema_migration.py`(11) + `test_backup_restore.py`(11) |
 | P1-7 覆盖率基线 | ✅ 完成 | 真 coverage.py 实测 **60.2%**；CI 门禁 `--cov-fail-under=58`；零覆盖文件从 6 → 2（见 §6.1） |
 | commands.py 拆分 | ✅ 完成 | 1,676 行上帝模块 → **99 行门面** + 7 个域模块（`cli_basic/model/channels/skills/sessions/automation/ops`，141–422 行）+ 61 行 `cli_shared`；`from uiu.commands import cmd_x` 保持可用；全量套件绿 |
-| 浏览器栈测试可运行 | ✅ 完成 | 装 playwright 后 5 模块 28 用例全绿；CI 改 `.[test,browser]` |
 | ~/.uiu 路径单点化 | ✅ 完成 | 新增 `uiu.paths`（`UIU_HOME` 可重定向），18 处硬编码替换；加扫描闸门测试防回退 |
 | npm 安装壳端到端 | ✅ 完成（含 2 个真 bug 修复） | 修「不跟 302 跳转」与「系统 Python 探测依赖管道」；加固：只用 CI 覆盖过的 Python 版本 + venv 失败退化；新增 `scripts/verify_npm_install.ps1` |
 | 版本单一来源 | ✅ 完成 | npm 0.1.5 → 0.1.7；`test_version_is_single_source` 锁定 pyproject/__init__/npm/CHANGELOG |

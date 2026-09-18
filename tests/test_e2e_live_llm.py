@@ -7,7 +7,11 @@ r"""真 LLM 最小闭环 E2E（审计 §6.3）。
     $env:UIU_E2E_LIVE=1
     .venv\Scripts\python.exe -m pytest tests/test_e2e_live_llm.py -q -m live -s
 
-验证的是**整条链路**：真实模型 → 工具 schema → tools.call_tool → 安全守卫 → 审计留痕。
+验证的是**真实服务商**这条路：真模型 → 工具 schema → tools.call_tool → 安全守卫 → 审计留痕。
+
+**没有 key 也能验证链路**：`tests/test_e2e_stub_llm.py` 用一个本地 OpenAI 兼容桩服务器，
+在 CI 里跑同样的闭环（不花钱、不联网、结果确定）。本文件补的是「真实报文兼容性」这一层：
+桩按我们**预期**的格式回，真服务商会不会那样回，只有跑过才知道。
 """
 
 from __future__ import annotations

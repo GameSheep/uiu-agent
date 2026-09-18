@@ -27,7 +27,7 @@
 |---|---|---|
 | ① 推送 25+ commit | ⏳ **待你执行** | 沙箱禁 SSH（`ssh.exe` 无法建信号管道）；提权重试会卡在审批上 |
 | ② 依赖分层 | ✅ **已完成** | 核心 18 → **8 个依赖**；全新 venv 实测 **132 秒 / 31 包**（此前 30 分钟+ 未完成）；新增 4 条守门测试 |
-| ③ 发 0.2.0-beta + npm 0.2.0 | ⏳ 待做 | 需先推送；npm 名 `uiu-agent` 目前 404 |
+| ③ 发 0.2.0-beta + npm 0.2.0 | 🟡 包装已就绪并能验证，差一次发布 | 版本链路与 tarball 内容都已修好并**用真实产物端到端跑通**（解包 → postinstall 135s → 启动器 version/--json）；npm 名 `uiu-agent` 仍是 404，等 `npm login` + `npm publish` |
 | ④ 隐私 / 数据处理声明 | ✅ **已完成** | 新增 `docs/privacy.md`；**出站主机白名单以文档为唯一来源**（首次运行就抓出 30 个漏写主机）；无遥测有测试守着 |
 | ⑤ 真 key 端到端 | 🟡 链路已验证（桩）；真实报文待 key | 桩模型 E2E 把整条链路验证掉，并因此查出并修掉递归强删的拦截缺口；真 key 只差 `UIU_E2E_LIVE=1 pytest -m live` |
 
@@ -58,7 +58,7 @@
 | 全屏 TUI（主题/浮层/检索/撤销/长会话） | ✅ | 11 状态预览 + 108 个 TUI 测试 |
 | 数据可恢复（备份 / 回收站 / 版本迁移） | ✅ | 恢复前自动快照、zip-slip 防护、schema 迁移 |
 | 可运维（日志 / 审计 / 体检 / 脚本化） | ✅ | `logs/uiu.log`、`uiu audit`、`doctor`、`--json` |
-| **一键安装（npm，零前置 Python）** | ⚠️ **未兑现** | npm 404；本机实测依赖构建 30 分钟仍未完成 |
+| **一键安装（npm，零前置 Python）** | 🟡 **产品侧已通，等发布** | 真实 tarball 解包 → postinstall → `uiu 0.2.0b1` 全通；核心依赖瘦身让这一步从「30 分钟没装完」变成 135 秒。registry 上仍是 404 |
 
 ---
 
@@ -87,6 +87,15 @@
 ### ② npm 包名落地
 `npm view uiu-agent` → 404。npm README 首页承诺的「用户只装 npm、不装 Python」**目前不可兑现**。
 > 验收：`npm install -g uiu-agent && uiu version` 在新机器上成功。
+
+**进展（2026-09-18）**：发布前把包装本身查了一遍，抓到一个**会让 npm 通道彻底不可用**的 bug——
+`package.json` 的 `files` 白名单只有 `["bin/"]`，而 `bin/install.js` 要 `require("../lib/version")`
+（0.2.0b1 新增的 semver→PEP440 映射）。用户装完 tarball 里没有 `lib/` → MODULE_NOT_FOUND → 装不上。
+已补 `lib/`，并用 **`npm pack` 的真实 tarball** 做了一次产物级端到端：
+解包 → 跑 postinstall（135 秒，含建 venv 与装 wheel）→ 启动器 `uiu version` 输出 `uiu 0.2.0b1`、
+`--json sessions usage` 返回合法信封。**剩余动作只有 `npm login` + `npm publish`**；
+这条发布产物级验收已写进 `docs/release-checklist.md`，并由 `tests/test_npm_package.py` 长期守着
+（tarball 必须覆盖运行时 require 的每个文件）。
 
 ### ③ 用真 key 跑一次端到端
 核心价值（对话 + 工具编排）至今只有**假 client 的单测**覆盖。仓库已有 `live` 标记的 E2E

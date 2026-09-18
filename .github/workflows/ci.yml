@@ -14,9 +14,11 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install (core + test + browser extras)
-        # [browser] 带上 playwright，否则 tests/test_browser_*.py 会被整模块 skip
-        run: pip install -e ".[test,browser]"
+      - name: Install (core + test + all capability extras)
+        # 必须装 [all]：测试会 import 桌面（PIL/cv2/numpy/pyautogui/win32gui）与
+        # 渠道（cryptography）等可选依赖的模块；只装核心会让 CI 变红。
+        # 这条约定由 tests/test_ci_contract.py 守着。
+        run: pip install -e ".[test,all]"
 
       - name: Byte-compile all sources
         run: python -m compileall -q src

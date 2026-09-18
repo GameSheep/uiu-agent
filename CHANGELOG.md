@@ -12,6 +12,12 @@
 - **网关默认鉴权**：默认只绑 `127.0.0.1`；无 `UIU_GATEWAY_TOKEN` 时拒绝非本机监听（需显式
   `UIU_GATEWAY_INSECURE=1` 才放行并告警）；新增 `uiu serve --host`；通用 webhook 的 secret 改为必填；
   `uiu doctor` 新增可自动修复的 `channel/gateway-no-token`。
+- **依赖分层（首次安装从 30 分钟+ 降到 2 分钟）**：核心依赖从 18 个收到 **8 个**
+  （openai/anthropic/rich/prompt-toolkit/textual/pyyaml/psutil/pyperclip）；桌面自动化拆到
+  `[desktop]`、屏幕识别到 `[ocr]`、Excel 到 `[office]`、Slack/企微 crypto 到 `[channels]`。
+  实测全新 venv `pip install -e .` **132 秒 / 31 个包**（此前整套依赖跑 30 分钟仍未装完）。
+  新增守门断言：核心依赖数 ≤10、重依赖不得回流核心、**屏蔽全部可选库后核心模块仍能导入**。
+  顺带修掉 OCR 缺依赖时的静默降级（以前回「屏幕上没有识别到文字」，现在明确说缺 `uiu[ocr]`）。
 - **语言策略（决策：仅简体中文）**：README 明写语言边界；把 `commands.py` 里 39 处英文用户提示
   统一成中文；新增测试保证「面向用户的反馈必须是中文」，而 `--json` 信封的键保持英文且稳定。
   明确不做 gettext/i18n 层（成本与收益不匹配）。

@@ -17,37 +17,26 @@ classifiers = [
     "Environment :: Console",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
+# 核心依赖 = 「装完立刻能聊天 + 能开 TUI」的最小集合（实测 8 个，全部轻量）。
+#
+# 判据不是「谁被 import 过」，而是**谁是启动路径上真正必需的**：屏蔽下列每个库以后，
+# 24 个核心模块（config/sessions/agent/tools/main/app/gateway/cron/doctor/...）依然全部导入成功
+# （见 docs/product-readiness-2026-09-18.md 与 tests/test_packaging_contract.py 的守门断言）。
+# 其余能力一律进 extras：桌面自动化 [desktop]、OCR [ocr]、Excel [office]、
+# 消息渠道 [channels]、浏览器 [browser]、语音 [voice]、向量记忆 [rag]、MCP [mcp]。
 dependencies = [
+    # 模型 SDK：基础对话必须有其一；两者都很轻（纯 Python + httpx），放进核心，
+    # 免得用户为了「能聊天」还得先研究 extras
     "openai>=1.40.0",
     "anthropic>=0.40.0",
+    # 终端 UI：REPL 用 rich/prompt-toolkit，全屏 TUI 用 textual
     "rich>=13.7.0",
     "prompt-toolkit>=3.0.43",
-    # full-screen TUI (v1.0: OpenClaw-style application UI)
     "textual>=8.0.0",
     "pyyaml>=6.0",
-    # wecom 官方回调 AES 解密 / 签名验证
-    "cryptography>=42.0.0",
-    # channel adapters (lightweight socket clients; heavy SDKs stay optional)
-    "slack-bolt>=1.18.0",
-    # screen automation (click by name via OCR)
-    "rapidocr-onnxruntime>=1.2.3",
-    "pyautogui>=0.9.54",
-    "pillow>=10.0.0",
-    # windows desktop control (window switching, hotkeys)
-    "pywin32>=306; sys_platform == 'win32'",
-    # spreadsheet reading
-    "openpyxl>=3.1.0",
-    # system info / clipboard
+    # 系统信息（TUI 状态栏）+ 剪贴板（复制回答）
     "psutil>=5.9.0",
     "pyperclip>=1.8.0",
-    # Fast OCR (Windows native, < 1s)
-    "screen-ocr[winrt]>=0.5.0; sys_platform == 'win32'",
-    # 屏幕/图像处理：auto_recovery / icon_locator / screen_diff 在模块层直接 import，
-    # 之前靠 rapidocr 的传递依赖侥幸可用 —— 必须显式声明。
-    "numpy>=1.26.0",
-    "opencv-python>=4.8.0",
-    # 浏览器自动化（playwright + chromium）体积大，改为可选：pip install uiu[browser]
-    # 核心依赖只保留「装完就能跑 CLI/TUI/桌面自动化」的部分。
 ]
 
 [project.optional-dependencies]
@@ -55,12 +44,31 @@ dependencies = [
 channels = [
     "dingtalk-stream>=0.18.0",
     "discord.py>=2.3.0",
+    # 轻量 socket 适配：Slack
+    "slack-bolt>=1.18.0",
+    # 企业微信官方回调的 AES 解密 / 签名验证
+    "cryptography>=42.0.0",
 ]
 # pip install uiu[desktop] — CV 桌面自动化（需大模型 key）+ Windows UIA 控件定位
 desktop = [
     "askui>=0.1.0",
     "uiautomation>=2.0.18; sys_platform == 'win32'",
+    # 鼠标键盘 / 截图 / 窗口控制
+    "pyautogui>=0.9.54",
+    "pillow>=10.0.0",
+    "pywin32>=306; sys_platform == 'win32'",
+    # 屏幕图像比对：auto_recovery / icon_locator / screen_diff 直接 import
+    "numpy>=1.26.0",
+    "opencv-python>=4.8.0",
 ]
+# pip install uiu[ocr] — 屏幕文字识别（按名字点按钮）。拖 onnxruntime，装完 200MB 级
+ocr = [
+    "uiu[desktop]",
+    "rapidocr-onnxruntime>=1.2.3",
+    "screen-ocr[winrt]>=0.5.0; sys_platform == 'win32'",
+]
+# pip install uiu[office] — 读写 Excel
+office = ["openpyxl>=3.1.0"]
 # pip install uiu[browser] — AI 浏览器（拖 playwright+chromium，体积大）
 browser = [
     "browser-use>=0.1.0",
@@ -84,8 +92,8 @@ voice = [
 rag = ["chromadb>=0.4.0", "sentence-transformers>=2.2.0"]
 # pip install uiu[all] — 全部重依赖
 all = [
-    "uiu[channels]", "uiu[desktop]", "uiu[browser]",
-    "uiu[mcp]", "uiu[voice]", "uiu[rag]",
+    "uiu[channels]", "uiu[desktop]", "uiu[ocr]", "uiu[office]",
+    "uiu[browser]", "uiu[mcp]", "uiu[voice]", "uiu[rag]",
 ]
 # pip install -e ".[test]" — 跑 tests/
 # 覆盖率基线见 docs/audit-2026-09-16-product-gap.md §6.1：

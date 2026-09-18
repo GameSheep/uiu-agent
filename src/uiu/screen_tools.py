@@ -204,6 +204,31 @@ _rapidocr_engine = None
 _rapidocr_lock = threading.Lock()
 
 
+def _module_available(name: str) -> bool:
+    """单独抽出来是为了可测（测试里 monkeypatch 它来模拟「没装 OCR」）。"""
+    import importlib.util as _ilu
+    try:
+        return _ilu.find_spec(name) is not None
+    except (ImportError, ValueError):
+        return False
+
+
+def _ocr_unavailable() -> str:
+    """OCR 后端一个都没有时，返回可执行的提示；可用时返回空串。
+
+    以前这里是**静默降级**：拿不到 OCR 引擎就返回空列表，工具于是回一句
+    「屏幕上没有识别到文字」——用户会以为自己屏幕上真的没字，而不是缺依赖。
+    装 extras 的分层方案让「核心-only 安装」成为常态，所以必须把原因说出来。
+    """
+    if _module_available("rapidocr_onnxruntime"):
+        return ""
+    if _module_available("winrt") or _module_available("screen_ocr"):
+        return ""
+    return ("OCR 能力未安装（缺 rapidocr-onnxruntime / screen-ocr）。\n"
+            "  装一下即可: pip install 'uiu[ocr]'\n"
+            "  或在 Windows 上: uiu doctor --fix --install-deps")
+
+
 def _get_rapidocr_engine():
     """Get or create RapidOCR engine (with use_angle_cls=False for faster screen OCR)."""
     global _rapidocr_engine
@@ -517,6 +542,9 @@ def _find(items: list[dict], text: str) -> list[dict]:
 
 def screen_read_text() -> str:
     """OCR the whole screen and return all visible text (like a screen reader)."""
+    hint = _ocr_unavailable()
+    if hint:
+        return hint
     items = _ocr_full_screen()
     if not items:
         return "(屏幕上没有识别到文字)"
@@ -528,6 +556,9 @@ def screen_read_text() -> str:
 
 def click_text(text: str, click_count: int = 1) -> str:
     """Click a button/element by its visible text using hierarchical sniffing."""
+    hint = _ocr_unavailable()
+    if hint:
+        return "[error] " + hint
     import pyautogui
     from .vision_locator import locate_text_on_screen
 
@@ -573,6 +604,9 @@ def press_key(keys: str) -> str:
 
 def ocr_region(x: int, y: int, w: int, h: int) -> str:
     """OCR a specific region of the screen (fast, < 0.5s)."""
+    hint = _ocr_unavailable()
+    if hint:
+        return hint
     items = _ocr_region(x, y, w, h)
     if not items:
         return "(区域内没有识别到文字)"
@@ -584,6 +618,9 @@ def ocr_region(x: int, y: int, w: int, h: int) -> str:
 
 def click_in_region(text: str, region_x: int, region_y: int, region_w: int, region_h: int) -> str:
     """Find and click text within a specific screen region (fast)."""
+    hint = _ocr_unavailable()
+    if hint:
+        return "[error] " + hint
     import pyautogui
     items = _ocr_region(region_x, region_y, region_w, region_h)
     matches = _find(items, text)

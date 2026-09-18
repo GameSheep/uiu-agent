@@ -184,6 +184,21 @@ pip install uiu            # Python ≥3.10 直接装（Windows 主推）
 uiu                        # 第一次运行自动引导：选模型 → 填 key → 进全屏聊天界面
 ```
 
+**核心依赖只有 8 个**（openai / anthropic / rich / prompt-toolkit / textual / pyyaml /
+psutil / pyperclip），实测全新 venv 装完约 **2 分钟 / 31 个包** —— 装完立刻能聊天、能开 TUI。
+其余能力按需加装（每一项都对应一组工具，没装时 `uiu doctor` 会告诉你怎么装）：
+
+```bash
+pip install "uiu[desktop]"   # 桌面自动化：鼠标键盘/窗口/截图/图像比对（含 pyautogui、opencv）
+pip install "uiu[ocr]"       # 屏幕找字点按钮（拖 onnxruntime，装完 200MB 级）
+pip install "uiu[office]"    # Excel 读写
+pip install "uiu[channels]"  # Slack / 钉钉 / Discord / 企业微信回调（含 cryptography）
+pip install "uiu[browser]"   # AI 浏览器（playwright + chromium，体积大）
+pip install "uiu[voice]"     # 语音播报 + 语音输入（whisper）
+pip install "uiu[rag]"       # 本地向量记忆（拖 torch ~2GB）
+pip install "uiu[all]"       # 全都要
+```
+
 也可以不装全局直接体验：`npx uiu-agent`（自动携带 Python 运行时；本轮以 PyPI 主路径为准）。
 
 > v1.0 起：首次运行不再需要手动 `uiu init` / `uiu config`——

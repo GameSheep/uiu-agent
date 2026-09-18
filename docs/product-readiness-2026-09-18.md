@@ -21,6 +21,18 @@
 一句话给决策：**工程质量已经不像 demo 了，产品成熟度卡在「东西没发出去 + 装机路径太重」这两点**——
 而这两点都不是编码能力问题，是可以在一两周内解决的**分发与取舍**问题。
 
+### 进展（2026-09-18 更新）
+
+| 步骤 | 状态 | 证据 |
+|---|---|---|
+| ① 推送 25+ commit | ⏳ **待你执行** | 沙箱禁 SSH（`ssh.exe` 无法建信号管道）；提权重试会卡在审批上 |
+| ② 依赖分层 | ✅ **已完成** | 核心 18 → **8 个依赖**；全新 venv 实测 **132 秒 / 31 包**（此前 30 分钟+ 未完成）；新增 4 条守门测试 |
+| ③ 发 0.2.0-beta + npm 0.2.0 | ⏳ 待做 | 需先推送；npm 名 `uiu-agent` 目前 404 |
+| ④ 隐私 / 数据处理声明 | ⏳ 待做 | 产品会读屏、读文件、读微信 |
+| ⑤ 真 key 端到端 | ⏳ 待做（缺 key） | 测试已就绪：`UIU_E2E_LIVE=1 pytest -m live` |
+
+② 的完成把「首次安装成功率」这个最大变量消掉了：**默认安装不再拉 onnxruntime/opencv 那套 200MB+ 的重物**。
+
 ---
 
 ## 1. 产品定位与目标用户
@@ -55,7 +67,7 @@
 | 维度 | 分 | 依据 | 差在哪 |
 |---|---|---|---|
 | 核心价值可用性 | **8** | 611 测试 / 60.2% 覆盖 / 123 工具 | 真 key 的端到端从未跑过 |
-| 首次上手体验 | **6** | `uiu` 直达 TUI、向导、doctor 依赖体检 | 安装链未发布、核心依赖重、必须自备 key |
+| 首次上手体验 | **7** | `uiu` 直达 TUI、向导、doctor 依赖体检；核心仅 8 个依赖、2 分钟装完 | 安装链未发布、必须自备 key |
 | 可靠性 · 数据安全 | **8** | 原子写 + 跨进程锁、备份、回收站、迁移 | 没有真机长期运行数据 |
 | 安全 · 合规 | **7** | 默认本机、确认 + 审计、凭据目录拒绝 | key 明文 `.env`；prompt injection 防线薄；**读屏/读文件/读微信却无隐私声明** |
 | 可运维性 | **7** | 分级日志、审计、doctor、`--json` | 无监控 / 健康检查 / 远程诊断 |
@@ -81,10 +93,30 @@
 （`UIU_E2E_LIVE=1`），但本机没有 key，从未运行。
 > 验收：`UIU_E2E_LIVE=1 pytest tests/test_e2e_live_llm.py -m live` 两条用例通过。
 
-### ④ 依赖瘦身 / 首次安装成功率（最大不确定性）
-核心依赖包含 `rapidocr-onnxruntime`、`opencv-python`、`numpy`、`screen-ocr[winrt]`、`slack-bolt`…
-实测全新环境 `pip install uiu` **30 分钟以上仍在源码构建**（Python 3.14 上 pyautogui 系直接失败）。
-> 验收：全新 venv 里 `pip install uiu` 在 1 分钟内完成（桌面/OCR 相关改为按需 extras）。
+### ④ 依赖瘦身 / 首次安装成功率（最大不确定性）—— ✅ 已解决（2026-09-18）
+
+核心依赖从 **18 个收到 8 个**（openai / anthropic / rich / prompt-toolkit / textual / pyyaml /
+psutil / pyperclip），重依赖全部进 extras：`[desktop]`（pyautogui/pillow/pywin32/numpy/opencv）·
+`[ocr]`（rapidocr-onnxruntime/screen-ocr）· `[office]`（openpyxl）· `[channels]`（slack-bolt/cryptography）
+· `[browser]` / `[voice]` / `[rag]` / `[mcp]`。
+
+**实测（全新 venv，Python 3.14，国内镜像）**：
+
+| | 之前 | 现在 |
+|---|---|---|
+| `pip install -e .` | 30 分钟以上**未装完** | **132 秒 / rc=0 / 31 个包** |
+| 核心-only 能否跑 | —— | ✅ `version` / `init` / `doctor --lint` / `--json` / 123 工具注册全部正常 |
+
+分层判据不是「谁被 import 过」，而是**启动路径上是否真的必需**：屏蔽全部 35 个可选库后，
+24 个核心模块（config/sessions/agent/tools/main/app/gateway/cron/doctor/…）仍全部导入成功。
+这条判据以测试固定下来（`test_core_dependencies_stay_small`、
+`test_heavy_stacks_never_leak_back_into_core`、`test_core_imports_do_not_need_optional_extras`）。
+
+顺带修掉一处**静默降级**：OCR 缺依赖时 `screen_read_text` 原本回「屏幕上没有识别到文字」
+（会让用户以为屏幕真没字），现在明确回「OCR 能力未安装…pip install 'uiu[ocr]'」。
+
+> 剩余差距：132 秒离「1 分钟」还有距离（主要是 pydantic-core/jiter 等 Rust wheel 与镜像延迟）。
+> 若要继续压，方向是把 `anthropic` 也变成 extras（只留 openai），但那会让 Claude 用户多一步。
 
 ### ⑤ 平台与语言边界前置
 现在写在 `docs/platform-support.md` 与 README 中段。mac/Linux 用户装完才发现桌面能力全不可用。
@@ -159,7 +191,8 @@ npm view uiu-agent version                                        # 404（未发
 
 - [ ] 推送 25 个 commit，发布 `0.2.0`（PyPI）
 - [ ] npm 发布 `uiu-agent@0.2.0`，在干净 Windows 机器上验收
-- [ ] 依赖分层：桌面/OCR/语音/浏览器/RAG 全部改为 extras，核心安装压到 1 分钟内
+- [x] 依赖分层：核心 18 → 8 个，桌面/OCR/Excel/渠道/浏览器/语音/RAG 全进 extras
+      实测全新 venv 132 秒装完（此前 30 分钟+ 未完成）
 - [ ] README 首屏标注平台与语言边界
 - [ ] 补隐私/数据处理说明
 - [ ] 用真 key 跑通 `live` E2E 并记录耗时与花费

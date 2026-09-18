@@ -51,6 +51,10 @@ docs/preview/*.png
 .uiu-smoke/
 .pytest_cache/
 
+# 覆盖率产物
+.coverage
+.coverage.*
+
 # 本机环境 workaround 的临时区（.shim 要提交，其余不入库）
 .piptmp/
 wheelhouse/

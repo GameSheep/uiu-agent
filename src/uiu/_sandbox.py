@@ -9,6 +9,8 @@ Policy (fail-closed on the worst, permissive elsewhere so daily use doesn't brea
 
 from __future__ import annotations
 
+from . import paths
+
 import enum
 import os
 import re
@@ -63,7 +65,7 @@ def _credential_dirs() -> list[str]:
     local = Path(os.environ.get("LOCALAPPDATA", home / "AppData" / "Local"))
     cands = [
         home / ".ssh", home / ".aws", home / ".gnupg", home / ".kube",
-        home / ".config" / "gcloud", home / ".uiu",
+        home / ".config" / "gcloud", paths.uiu_home(),
         appdata / "Microsoft" / "Credentials",
         local / "Microsoft" / "Credentials",
         local / "Google" / "Chrome" / "User Data",

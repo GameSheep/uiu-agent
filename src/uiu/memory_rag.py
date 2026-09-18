@@ -14,6 +14,8 @@ Install:
 
 from __future__ import annotations
 
+from . import paths
+
 import os
 import hashlib
 from datetime import datetime
@@ -139,7 +141,7 @@ def get_vector_memory(persist_dir: str | None = None) -> VectorMemory:
     global _vector_memory
     if _vector_memory is None:
         if persist_dir is None:
-            persist_dir = str(Path.home() / ".uiu" / "memory_vectors")
+            persist_dir = str(paths.memory_vectors_dir())
         _vector_memory = VectorMemory(persist_dir)
     return _vector_memory
 
@@ -254,7 +256,7 @@ def _workspace_memory_path() -> Path:
     candidates += [
         Path.cwd() / "workspace" / "MEMORY.md",
         Path.home() / "workspace" / "MEMORY.md",
-        Path.home() / ".uiu" / "workspace" / "MEMORY.md",
+        paths.home_workspace() / "MEMORY.md",
     ]
     # Prefer existing file; else first candidate dir that exists
     for p in candidates:

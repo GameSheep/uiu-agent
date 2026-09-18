@@ -10,6 +10,8 @@ Inspired by Hermes Agent's 9-layer workspace pattern, simplified to 4 layers:
 
 from __future__ import annotations
 
+from . import paths
+
 import os
 import re
 import sys
@@ -140,7 +142,7 @@ def find_workspace() -> Path:
     """Locate workspace dir: $UIU_WORKSPACE > ./workspace > ~/.uiu/workspace."""
     env = os.environ.get("UIU_WORKSPACE")
     candidates = [Path(env).expanduser()] if env else []
-    candidates += [Path.cwd() / "workspace", Path.home() / ".uiu" / "workspace"]
+    candidates += [Path.cwd() / "workspace", paths.home_workspace()]
     for p in candidates:
         if (p / "SOUL.md").exists() or (p / "IDENTITY.md").exists() or p.is_dir():
             return p

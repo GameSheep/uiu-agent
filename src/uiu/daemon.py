@@ -19,6 +19,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from . import paths
 from ._atomic import atomic_write_text
 from .log import get_logger, log_path as workspace_log_path, setup_logging
 
@@ -28,13 +29,9 @@ from . import cron
 def daemon_dir() -> Path:
     """Daemon state directory (pid / log / autostart scratch).
 
-    Override with UIU_HOME — never assume the user's home is writable (containers,
-    locked-down machines and test runs all need a redirectable location).
+    走 uiu.paths 的单点解析（UIU_HOME 可重定向）——别在这里再拼一次 home。
     """
-    override = os.environ.get("UIU_HOME", "").strip()
-    d = Path(override) if override else Path.home() / ".uiu"
-    d.mkdir(parents=True, exist_ok=True)
-    return d
+    return paths.daemon_state_dir()
 
 
 def pid_path() -> Path:

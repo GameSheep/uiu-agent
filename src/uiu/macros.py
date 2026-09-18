@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+from . import paths
+
 import json
 import re
 import time
@@ -25,7 +27,7 @@ def _workspace_root() -> Path | None:
     env = os.environ.get("UIU_WORKSPACE")
     if env:
         return Path(env).expanduser()
-    for cand in (Path.cwd() / "workspace", Path.home() / "workspace", Path.home() / ".uiu" / "workspace"):
+    for cand in (Path.cwd() / "workspace", Path.home() / "workspace", paths.home_workspace()):
         if cand.is_dir():
             return cand
     return None

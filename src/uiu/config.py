@@ -16,6 +16,8 @@ Secrets NEVER go in config.yaml. Channels reference secrets by *env var name*
 
 from __future__ import annotations
 
+from . import paths
+
 import os
 import re
 from dataclasses import dataclass, field, asdict
@@ -76,7 +78,7 @@ class ModelConfig:
             for env_path in (
                 Path.cwd() / ".env",
                 Path.cwd() / "workspace" / ".env",
-                Path.home() / ".uiu" / "workspace" / ".env",
+                paths.home_workspace() / ".env",
             ):
                 try:
                     if env_path.exists():

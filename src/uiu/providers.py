@@ -10,6 +10,8 @@ that drives `uiu model`.
 
 from __future__ import annotations
 
+from . import paths
+
 import json
 import os
 import sys
@@ -135,7 +137,7 @@ def list_profiles() -> list[ProviderProfile]:
 def _user_plugins_dir() -> Path | None:
     """~/.uiu/plugins/model-providers/ if it exists (Hermes $HERMES_HOME)."""
     try:
-        d = Path.home() / ".uiu" / "plugins" / "model-providers"
+        d = paths.providers_plugins_dir()
         return d if d.is_dir() else None
     except Exception:
         return None

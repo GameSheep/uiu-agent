@@ -15,6 +15,8 @@ incoming messages to the agent loop, one conversation per chat_id.
 
 from __future__ import annotations
 
+from . import paths
+
 import asyncio
 import importlib.util
 import json
@@ -110,7 +112,7 @@ def list_adapters() -> list[str]:
 
 
 def _user_channels_dir() -> Path | None:
-    d = Path.home() / ".uiu" / "channels"
+    d = paths.channels_dir()
     return d if d.is_dir() else None
 
 

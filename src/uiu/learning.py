@@ -21,6 +21,7 @@ import re
 import time
 from pathlib import Path
 
+from . import paths
 from ._atomic import atomic_write_text
 from .workspace import Workspace
 
@@ -54,7 +55,7 @@ def _ws() -> Workspace | None:
     env = os.environ.get("UIU_WORKSPACE")
     if env:
         return Workspace(root=Path(env).expanduser())
-    for cand in (Path.cwd() / "workspace", Path.home() / "workspace", Path.home() / ".uiu" / "workspace"):
+    for cand in (Path.cwd() / "workspace", Path.home() / "workspace", paths.home_workspace()):
         if cand.is_dir():
             return Workspace(root=cand)
     return None

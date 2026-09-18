@@ -14,6 +14,8 @@ Usage:
 
 from __future__ import annotations
 
+from . import paths
+
 import argparse
 import os
 import sys
@@ -37,7 +39,7 @@ def _load_dotenv(path: Path | None = None, paths: list[Path] | None = None) -> N
         paths += [
             Path.cwd() / ".env",
             Path.cwd() / "workspace" / ".env",
-            Path.home() / ".uiu" / "workspace" / ".env",
+            paths.home_workspace() / ".env",
         ]
 
     seen: set[str] = set()
@@ -473,7 +475,7 @@ def _resolve_workspace(args) -> Path | None:
     ws_arg = getattr(args, "workspace", None) or os.environ.get("UIU_WORKSPACE")
     if ws_arg:
         return Path(ws_arg).expanduser()
-    for p in (Path.cwd() / "workspace", Path.home() / "workspace", Path.home() / ".uiu" / "workspace"):
+    for p in (Path.cwd() / "workspace", Path.home() / "workspace", paths.home_workspace()):
         if (p / "config.yaml").exists() or (p / "SOUL.md").exists():
             return p
     return None
@@ -528,7 +530,7 @@ def main(argv: list[str] | None = None) -> int:
     env_paths = [
         Path.cwd() / ".env",
         Path.cwd() / "workspace" / ".env",
-        Path.home() / ".uiu" / "workspace" / ".env",
+        paths.home_workspace() / ".env",
     ]
     if ws_path:
         env_paths.insert(0, ws_path / ".env")

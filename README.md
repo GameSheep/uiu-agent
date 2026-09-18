@@ -35,6 +35,7 @@
 | [docs/troubleshooting.md](docs/troubleshooting.md) | 按症状排查（启动/密钥/权限/数据/环境） |
 | [docs/tui-tour.md](docs/tui-tour.md) | 界面导览（11 个界面配图） |
 | [docs/audit-2026-09-16-product-gap.md](docs/audit-2026-09-16-product-gap.md) | 产品级差距审计与实施进度 |
+| [docs/product-readiness-2026-09-18.md](docs/product-readiness-2026-09-18.md) | **产品完成度评估（PM 视角）**：评分、发布阻断项、风险、决策建议 |
 
 ## 屏幕自动化（OCR 点击，不需要视觉模型）
 

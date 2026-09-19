@@ -98,7 +98,7 @@ def cmd_channel(args) -> int:
             return 2
         c.enabled = (args.action == "enable")
         save_config(ws, cfg)
-        _print_ok(f"已{{'启用' if args.action == 'enable' else '停用'}} {args.name}")
+        _print_ok(f"{args.name} 已{'启用' if args.action == 'enable' else '停用'}")
         return 0
 
     if args.action == "remove":

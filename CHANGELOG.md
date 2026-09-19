@@ -19,6 +19,10 @@
 - **网关默认鉴权**：默认只绑 `127.0.0.1`；无 `UIU_GATEWAY_TOKEN` 时拒绝非本机监听（需显式
   `UIU_GATEWAY_INSECURE=1` 才放行并告警）；新增 `uiu serve --host`；通用 webhook 的 secret 改为必填；
   `uiu doctor` 新增可自动修复的 `channel/gateway-no-token`。
+- **修复两处「打印出 Python 代码」的文案**：`cron enable/disable` 与 `channel enable/disable`
+  的输出曾被多转义一层（`f"已{{'启用' if ... else '停用'}}"`），用户看到的是
+  `[ok] job1 已{'启用' if action == 'enable' else '停用'}`。现在输出正常的「已启用/已停用」。
+  新增两道防线：静态扫描「被多转义一层的 f-string 表达式」，以及动态断言 enable/disable 的真实输出。
 - **破坏性操作的确认契约（灾难恢复路径可自动化了）**：`uiu restore` 在管道/CI 里
   （拿不到输入）会走 `input()` 拿到 EOF，被当成「用户取消」，打印「已取消」却**返回 0**——
   于是 `uiu restore b.zip && echo OK` 会打印 OK 而实际什么都没恢复。现在三态明确：

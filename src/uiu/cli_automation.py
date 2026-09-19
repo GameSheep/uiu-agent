@@ -80,7 +80,8 @@ def cmd_cron(args) -> int:
 
     if action in ("enable", "disable"):
         if _cron.set_enabled(ws, args.name, action == "enable"):
-            _print_ok(f"{args.name} 已{{'启用' if action == 'enable' else '停用'}}")
+            verb = "启用" if action == "enable" else "停用"
+            _print_ok(f"{args.name} 已{verb}")
             return 0
         _print_err(f"没有这个定时任务: {args.name}")
         return 2

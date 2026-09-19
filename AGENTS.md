@@ -69,6 +69,9 @@ See @README.md for project overview and @package.json for available npm/pnpm com
   CLI 输出统一走 `cli_io` 的 `_safe_print`、标记只用 ASCII（`[ok]`/`[x]`）。
   **这类问题用 `capsys` 测不出来**（它捕的是文本），
   必须起子进程 + `PYTHONIOENCODING=gbk`（见 `tests/test_cli_encoding.py` 的 17 条命令扫荡）。
+- **拼 f-string 文案别多转义一层**：写 `f"已{{'启用' if x else '停用'}}"` 会把表达式**原样打印**
+  （用户看到 Python 代码）。要分支就先算好中间变量再插值：`verb = "启用" if x else "停用"`。
+  有静态扫描守着（`tests/test_language_policy.py`），但这类问题最好的发现方式还是**真跑一遍命令**。
 - **不要在跑全量测试的同时改源码**：pytest 边收集边导入，改到一半的文件会被读到，
   产生假失败（我就这么污染过一次覆盖率统计）。先跑完、再改、再跑。
 - 从 git 历史重新生成文件（如按域拆分）时要留意：**未提交的改动会丢**。本轮把 `commands.py`

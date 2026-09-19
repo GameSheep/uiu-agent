@@ -79,3 +79,51 @@ def test_feedback_functions_still_used(tmp_path):
 
     assert hasattr(commands, "_print_ok") and hasattr(commands, "_print_err")
     assert _messages(), "扫描不到任何用户可见文案，检查扫描逻辑是否失效"
+
+
+# --------------------------------------------------------------------------
+# 误转义的 f-string（真跑 cron disable 时用户看到的是原样 Python 代码）
+# --------------------------------------------------------------------------
+
+
+def test_no_accidentally_escaped_fstring_expressions():
+    """用户可见文案里不许出现「被多转义一层」的 f-string 表达式。
+
+    真实事故：翻译文案时写成 `f"已{{'启用' if x else '停用'}}"`，
+    双花括号让表达式**原样打印**，用户看到的是
+
+        [ok] hello 已{'启用' if action == 'enable' else '停用'}
+
+    单测没覆盖这条输出，所以只靠"跑一遍"才发现。这里做静态扫描防复发。
+    """
+    import re
+
+    pattern = re.compile(r"\{\{'")          # f-string 里多转义一层
+    offenders = []
+    for path in sorted(SRC.rglob("*.py")):
+        for i, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if pattern.search(line):
+                offenders.append(f"{path.relative_to(SRC)}:{i}: {line.strip()[:90]}")
+    assert not offenders, (
+        "这些 f-string 的表达式被多转义了一层，会原样打印给用户：\n  "
+        + "\n  ".join(offenders))
+
+
+def test_cron_enable_disable_prints_chinese_verb(tmp_path, capsys):
+    """动态断言：enable/disable 的输出必须是中文动词，而不是代码片段。"""
+    from uiu.main import main
+
+    ws = tmp_path / "ws"
+    assert main(["--workspace", str(ws), "init"]) == 0
+    assert main(["--workspace", str(ws), "cron", "add", "job1", "1h", "echo hi"]) == 0
+    capsys.readouterr()
+
+    assert main(["--workspace", str(ws), "cron", "disable", "job1"]) == 0
+    out = capsys.readouterr().out
+    assert "停用" in out, out
+    assert "{" not in out and "if " not in out, f"打印了代码片段而不是结果：{out}"
+
+    assert main(["--workspace", str(ws), "cron", "enable", "job1"]) == 0
+    out = capsys.readouterr().out
+    assert "启用" in out, out
+    assert "{" not in out and "if " not in out, f"打印了代码片段而不是结果：{out}"

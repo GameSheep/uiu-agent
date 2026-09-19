@@ -20,6 +20,12 @@ jobs:
         # 这条约定由 tests/test_ci_contract.py 守着。
         run: pip install -e ".[test,all]"
 
+      # 先跑契约检查（<1s 失败）：装少 extras 时立刻给出「缺哪个 extra」，
+      # 而不是让 60+ 个测试文件在 import 阶段炸出一堆 ModuleNotFoundError。
+      # 线上 CI 曾两次红在 "Unit tests"，都属这一类，日志却只显示 "exit code 1"。
+      - name: Verify CI extras contract (fast fail)
+        run: python -m pytest tests/test_ci_contract.py -q
+
       - name: Byte-compile all sources
         run: python -m compileall -q src
 

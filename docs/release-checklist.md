@@ -14,6 +14,7 @@
 | npm 真实产物 | `npm pack` tarball 解包 → postinstall → 启动器 | 135 秒装完，`uiu 0.2.0b1` 与 `--json` 正常 |
 | 发布门禁 | `uiu publish --dry-run` | **21 秒** rc=0（版本一致性 → 构建 → 检查 126 文件） |
 | 网关 | 真起 serve + 真发 HTTP | 无/错 token → 401，对 token → 200；拒绝事件进审计 |
+| **网关主轴**（消息进 → agent → 回） | 桩模型 + `POST /generic/ext` | secret 校验通过 → agent 真跑 → **会话落盘 `gw-u1.json`（system/user/assistant）**；回复因 webhook 无出站而如实报 `send failed`（该限制已写进文档与 `channel add` 提示） |
 | 备份/恢复 | backup → 破坏 → restore --yes | 恢复 8 文件、内容一致、配置回滚、自动 pre-restore 快照 |
 | cron / daemon | 真起 daemon，加一次到期任务 | 任务被自动执行；日志含 **daily backup** 与 cron tick |
 | CLI 全命令 | 21 条命令在 `PYTHONIOENCODING=gbk` 下扫荡 | 0 崩溃（修复 2 处：`publish` 的 ✓、`skills search` 的 ⭐） |

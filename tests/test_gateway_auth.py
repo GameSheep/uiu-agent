@@ -283,3 +283,30 @@ def test_gateway_auth_denials_are_audited(live_gateway):
     assert len(denied) >= 2, [e.get("event") for e in events]
     assert "/api/channels" in str(denied[0].get("path")), denied[0]
     assert denied[0].get("remote"), "拒绝事件没记来源地址"
+
+
+# --------------------------------------------------------------------------
+# webhook 通道「只接收不回消息」必须让用户看得见（真跑网关主轴时发现的半截承诺）
+# --------------------------------------------------------------------------
+
+
+def test_webhook_channel_add_says_it_cannot_reply(tmp_path, capsys):
+    from uiu.main import main
+
+    ws = tmp_path / "ws"
+    assert main(["--workspace", str(ws), "init"]) == 0
+    capsys.readouterr()
+
+    assert main(["--workspace", str(ws), "channel", "add", "ext", "--type", "webhook"]) == 0
+    out = capsys.readouterr().out
+    assert "只接收" in out and "不回消息" in out, (
+        f"加 webhook 渠道时必须说清它不能回消息，否则集成方会以为能拿到回复：{out}")
+
+
+def test_gateway_docs_document_the_webhook_limitation():
+    from pathlib import Path
+
+    docs = Path(__file__).resolve().parent.parent / "docs" / "gateway-api.md"
+    body = docs.read_text(encoding="utf-8")
+    assert "只接收" in body and "不回消息" in body, "gateway-api 没写清 webhook 只能接收"
+    assert "gw-<chat_id>" in body, "文档没说回复去哪看"

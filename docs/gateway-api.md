@@ -88,6 +88,15 @@ curl -X POST http://127.0.0.1:8765/generic/ext \
 - `chat_field` / `text_field`：点分路径，默认 `chat_id` / `text`；
 - `secret`：也可用 `?secret=` 传入；**未配置 secret 的渠道一律拒绝投递**（返回 `code: 1`）。
 
+> **webhook 通道只接收、不回消息**：HTTP 响应固定是 `{"code": 0}`（投递成功），
+> agent 的回复**不会**推回调用方 —— 这个适配器没有出站通道，日志里会看到
+> `send failed (webhook): webhook 无 callback，只能接收`。
+>
+> 想拿到回复：`uiu sessions show gw-<chat_id>`（网关按 `chat_id` 维护独立会话，
+> 文件是 `sessions/gw-<chat_id>.json`），或者直接在 TUI 里看。
+> 需要「发出去」的渠道请用飞书 / 企微 / Slack / Discord 等有出站能力的适配器，
+> 或走 `POST /api/send`。
+
 ### `POST /feishu`、`GET|POST /wecom`、`GET|POST /whatsapp`
 
 平台回调入口，按各平台协议解析（飞书 `im.message.receive_v1`、企微 AES 加密包、WhatsApp

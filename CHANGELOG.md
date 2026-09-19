@@ -19,6 +19,9 @@
 - **网关默认鉴权**：默认只绑 `127.0.0.1`；无 `UIU_GATEWAY_TOKEN` 时拒绝非本机监听（需显式
   `UIU_GATEWAY_INSECURE=1` 才放行并告警）；新增 `uiu serve --host`；通用 webhook 的 secret 改为必填；
   `uiu doctor` 新增可自动修复的 `channel/gateway-no-token`。
+- **webhook 通道「只接收不回消息」说清楚了**：真跑网关主轴（消息进 → agent → 回）时发现，
+  通用 webhook 没有出站通道，agent 的回复只落在会话文件里。文档与 `uiu channel add` 现在都会
+  明说这一点，并告诉用户去哪看回复（`uiu sessions show gw-<chat_id>`）。
 - **退出码契约第三处修复：`uiu skills install/search` 失败返回 0**：DNS 挂了、identifier 不合法，
   都会打印 `[error] …` 却 `return 0` —— 脚本与 CI 会以为装好了。现在统一走
   `cli_shared._ok_or_error()`（约定：这类返回文本以 `[error] ` 开头即失败）。

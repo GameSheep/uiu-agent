@@ -86,6 +86,8 @@ def cmd_channel(args) -> int:
             print("        uiu config --set-secret EMAIL_PASSWORD=...（建议用应用专用密码）")
         elif ctype == "webhook":
             print("  通用 webhook: 可带 -o secret=... -o chat_field=user.id -o text_field=message")
+            print("     注意：webhook 只接收、不回消息；回复会存进会话 gw-<chat_id>"
+                  "（uiu sessions show gw-<id>）")
             print("          外部系统 POST 到 http://0.0.0.0:8765/generic/<name>")
         print("  启用: uiu channel enable", name)
         print("  启动网关: uiu serve")

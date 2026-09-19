@@ -42,6 +42,9 @@ See @README.md for project overview and @package.json for available npm/pnpm com
   界面导览见 `docs/tui-tour.md`。
 
 ## 已知环境限制
+- **别用管道量退出码**：PowerShell 里 `& exe ... | Select-Object -First 2` 会**提前终止上游进程**，
+  此时 `$LASTEXITCODE` 不可信（本轮据此误判过 `skills install` 的 rc）。正确姿势：
+  `$out = & exe ...; $rc = $LASTEXITCODE`，再对 `$out` 做截断。
 - **pip / 一切 `mkdtemp` 工具在这台机器上会失败**（`mkdir(mode=0o700)` 被落成 deny ACL）。
   解法：`$env:PYTHONPATH="<repo>\.shim"` 后再跑（`.shim/sitecustomize.py` 把 mode 归一化成 0o777），
   并把 `TEMP/TMP` 指到普通目录（如 `<repo>\.piptmp`）。装包时再用国内镜像：

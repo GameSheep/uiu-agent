@@ -19,6 +19,11 @@
 - **网关默认鉴权**：默认只绑 `127.0.0.1`；无 `UIU_GATEWAY_TOKEN` 时拒绝非本机监听（需显式
   `UIU_GATEWAY_INSECURE=1` 才放行并告警）；新增 `uiu serve --host`；通用 webhook 的 secret 改为必填；
   `uiu doctor` 新增可自动修复的 `channel/gateway-no-token`。
+- **退出码契约第三处修复：`uiu skills install/search` 失败返回 0**：DNS 挂了、identifier 不合法，
+  都会打印 `[error] …` 却 `return 0` —— 脚本与 CI 会以为装好了。现在统一走
+  `cli_shared._ok_or_error()`（约定：这类返回文本以 `[error] ` 开头即失败）。
+  新增 `tests/test_exit_codes.py`（5 条），含**静态扫描**「`print(可能失败的调用)` 后紧跟
+  `return 0`」这个已栽过三次的形状（serve / restore / skills install）。
 - **修复两处「打印出 Python 代码」的文案**：`cron enable/disable` 与 `channel enable/disable`
   的输出曾被多转义一层（`f"已{{'启用' if ... else '停用'}}"`），用户看到的是
   `[ok] job1 已{'启用' if action == 'enable' else '停用'}`。现在输出正常的「已启用/已停用」。

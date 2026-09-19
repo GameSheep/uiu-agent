@@ -46,6 +46,17 @@ def _print_err(msg: str) -> None:
     print(f"[error] {msg}", file=sys.stderr)
 
 
+def _ok_or_error(text: str, *, err_code: int = 1) -> int:
+    """打印「人读结果文本」并给出退出码。
+
+    约定：这一类函数用 `[error] ` 开头表示失败。调用方如果写成
+    `print(f(...)); return 0` 就会把失败报成成功 —— serve / restore / skills install
+    都轮到过同一个坑（脚本与 CI 会以为成功了）。这里把判断收敛到一处。
+    """
+    print(text)
+    return err_code if str(text).strip().startswith("[error]") else 0
+
+
 def _confirm_or_abort(prompt: str, yes: bool, *, action: str) -> bool | None:
     """确认三态：True=继续执行，False=用户明确拒绝，None=**非交互环境无法确认**。
 

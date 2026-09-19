@@ -26,6 +26,7 @@ from .workspace import load_workspace
 # ---------- helpers ----------
 
 from .cli_shared import (
+    _ok_or_error,
     _print_err,
     _print_ok,
     _workspace,
@@ -39,13 +40,13 @@ def cmd_skills(args) -> int:
 
     if args.action == "install":
         from .skill_installer import install_skill
-        print(install_skill(args.identifier, skills_dir, name_override=args.name, force=args.force))
-        return 0
+        # 失败必须非 0：以前是 print(...) + return 0，DNS 挂了也报成功
+        return _ok_or_error(install_skill(args.identifier, skills_dir,
+                                          name_override=args.name, force=args.force))
 
     if args.action == "search":
         from .skill_installer import search_skills
-        print(search_skills(args.query, limit=args.limit))
-        return 0
+        return _ok_or_error(search_skills(args.query, limit=args.limit))
 
     if args.action == "inspect":
         from .skill_installer import parse_identifier, find_skill_files, _http_get

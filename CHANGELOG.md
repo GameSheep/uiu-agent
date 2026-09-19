@@ -19,6 +19,12 @@
 - **网关默认鉴权**：默认只绑 `127.0.0.1`；无 `UIU_GATEWAY_TOKEN` 时拒绝非本机监听（需显式
   `UIU_GATEWAY_INSECURE=1` 才放行并告警）；新增 `uiu serve --host`；通用 webhook 的 secret 改为必填；
   `uiu doctor` 新增可自动修复的 `channel/gateway-no-token`。
+- **破坏性操作的确认契约（灾难恢复路径可自动化了）**：`uiu restore` 在管道/CI 里
+  （拿不到输入）会走 `input()` 拿到 EOF，被当成「用户取消」，打印「已取消」却**返回 0**——
+  于是 `uiu restore b.zip && echo OK` 会打印 OK 而实际什么都没恢复。现在三态明确：
+  `--yes` 继续；交互终端里问用户；**读不到输入 → rc=2 并告诉你加 `--yes`**。
+  同一个助手也用在 `sessions prune` 上。真机验证了往返：带 `--yes` 时恢复 8 个文件、
+  会话内容一字不差、配置回滚、并自动留 pre-restore 快照。
 - **网关启动契约与鉴权留痕**：`uiu serve` 在「没有 enabled channel」时曾**返回 0**
   （脚本/守护进程会以为服务在跑）——现在 `Gateway.run()` 返回「为什么没起来」，
   `cmd_serve` 映射成非 0 退出码；并且**先校验绑定安全性再检查 channel**，

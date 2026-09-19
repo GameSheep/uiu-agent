@@ -26,7 +26,7 @@ from .workspace import load_workspace
 # ---------- helpers ----------
 
 from .cli_shared import (
-    _confirm,
+    _confirm_or_abort,
     _print_err,
     _print_ok,
     _session_age_days,
@@ -120,11 +120,17 @@ def cmd_sessions(args) -> int:
             cli_io.result("sessions.prune", data={**plan, "applied": False},
                           human=f"{head}\n{listing}\n\n(dry-run：没有真的删除)")
             return 0
-        if not cli_io.json_mode() and not getattr(args, "yes", False) \
-                and not _confirm("确认裁剪？", default_yes=False):
-            cli_io.result("sessions.prune", ok=False, data={**plan, "applied": False},
-                          error="用户取消", human="已取消")
-            return 0
+        if not cli_io.json_mode():
+            answer = _confirm_or_abort("确认裁剪？", bool(getattr(args, "yes", False)),
+                                       action=f"裁剪 {len(plan['removed'])} 个会话")
+            if answer is None:
+                cli_io.result("sessions.prune", ok=False, data={**plan, "applied": False},
+                              error="非交互环境缺少 --yes", human="")
+                return 2
+            if not answer:
+                cli_io.result("sessions.prune", ok=False, data={**plan, "applied": False},
+                              error="用户取消", human="已取消")
+                return 0
         result = _sessions.prune_sessions(ws, keep=int(keep or 0),
                                           max_age_days=float(days or 0),
                                           protect=("default",))

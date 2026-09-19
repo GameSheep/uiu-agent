@@ -30,7 +30,7 @@ from .cli_model import (
 )
 
 from .cli_shared import (
-    _confirm,
+    _confirm_or_abort,
     _print_err,
     _print_ok,
     _workspace,
@@ -202,12 +202,15 @@ def cmd_restore(args) -> int:
         _print_err(f"找不到备份文件: {archive}")
         return 2
 
-    if not getattr(args, "yes", False):
-        print(f"将用 {archive.name} 覆盖当前 workspace: {ws}")
-        print("（恢复前会自动做一份 pre-restore 备份，可撤销）")
-        if not _confirm("确认恢复？", default_yes=False):
-            print("已取消")
-            return 0
+    print(f"将用 {archive.name} 覆盖当前 workspace: {ws}")
+    print("（恢复前会自动做一份 pre-restore 备份，可撤销）")
+    answer = _confirm_or_abort("确认恢复？", bool(getattr(args, "yes", False)),
+                               action=f"用 {archive.name} 覆盖当前 workspace")
+    if answer is None:
+        return 2                       # 非交互又没有 --yes：明确失败，绝不假装成功
+    if not answer:
+        print("已取消")
+        return 0
 
     try:
         result = restore_backup(ws, archive, keep=getattr(args, "keep", 7))

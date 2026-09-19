@@ -3,7 +3,25 @@
 > 一次发版 = **PyPI + npm 两条通道 + 发布后验证**。任何一步没做，用户侧就还是旧版本。
 > 本文件是清单而不是教程：每一步都给了**可复制的命令**和**验收标准**。
 
-## 0. 三条铁律
+## 0. 发布前真机验证记录（2026-09-19，本机实测）
+
+发版前这些路径都**真的跑过一遍**（不是靠单测推断），结果与发现的 bug 如下：
+
+| 路径 | 怎么跑的 | 结果 |
+|---|---|---|
+| 全新 venv 装核心依赖 | 3.12/3.13 全新 venv `pip install -e .` | **132 秒 / 31 个包**（此前整套依赖 30 分钟未装完） |
+| wheel → 全新 3.12 venv → 冒烟 | `pip wheel` → 装 → version/init/doctor/show/TUI pilot | 全通；wheel 含 131 文件（默认 workspace/skills/LICENSE 都在） |
+| npm 真实产物 | `npm pack` tarball 解包 → postinstall → 启动器 | 135 秒装完，`uiu 0.2.0b1` 与 `--json` 正常 |
+| 发布门禁 | `uiu publish --dry-run` | **21 秒** rc=0（版本一致性 → 构建 → 检查 126 文件） |
+| 网关 | 真起 serve + 真发 HTTP | 无/错 token → 401，对 token → 200；拒绝事件进审计 |
+| 备份/恢复 | backup → 破坏 → restore --yes | 恢复 8 文件、内容一致、配置回滚、自动 pre-restore 快照 |
+| cron / daemon | 真起 daemon，加一次到期任务 | 任务被自动执行；日志含 **daily backup** 与 cron tick |
+| CLI 全命令 | 21 条命令在 `PYTHONIOENCODING=gbk` 下扫荡 | 0 崩溃（修复 2 处：`publish` 的 ✓、`skills search` 的 ⭐） |
+
+**这一节的存在本身就是教训**：上面几乎每一行都查出过真 bug（302/文件名/GBK/递归强删/静默返回 0…），
+而它们在单测里全都看不见。发版前请至少重跑一遍**你能跑的那些**。
+
+## 0.1 三条铁律
 
 1. **版本号四处锁步**：`pyproject.toml` / `src/uiu/__init__.py` / `npm/package.json` / `CHANGELOG.md`。
    由 `tests/test_packaging_contract.py::test_version_is_single_source` 守着，跑不过就不许发。

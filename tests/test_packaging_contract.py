@@ -342,3 +342,85 @@ def test_ocr_not_installed_message_is_actionable():
 
     hint = S._ocr_unavailable.__doc__ or ""
     assert "pip install" in (S._ocr_unavailable.__code__.co_consts[-1] if False else "") or True
+
+
+# --------------------------------------------------------------------------
+# 发布路径（③ 发版准备）
+# --------------------------------------------------------------------------
+
+
+def test_publish_dry_run_does_not_install_twine(monkeypatch, tmp_path, capsys):
+    """--dry-run 只该装 build：twine 的依赖树很重，装它会让「发布前先验一遍」没人做。"""
+    from uiu import cli_ops
+
+    calls: list[list[str]] = []
+
+    class _Proc:
+        returncode = 0
+
+    def _fake_run(cmd, *a, **kw):
+        calls.append(list(cmd))
+        return _Proc()
+
+    monkeypatch.setattr(cli_ops.subprocess, "run", _fake_run)
+    monkeypatch.setattr(cli_ops, "_verify_version_consistency", lambda: (True, "0.2.0b1"))
+    monkeypatch.chdir(tmp_path)
+
+    class _Args:
+        dry_run = True
+        token = ""
+        test = False
+
+    cli_ops.cmd_publish(_Args())          # 构建后找不到 wheel 会返回 1，这里只看安装动作
+    pip_installs = [c for c in calls if "install" in c and "-m" in c]
+    assert pip_installs, f"没有记录到 pip 安装调用：{calls}"
+    joined = " ".join(pip_installs[0])
+    assert "build" in joined, joined
+    assert "twine" not in joined, f"dry-run 不该装 twine：{joined}"
+    capsys.readouterr()
+
+
+def test_publish_with_token_installs_twine(monkeypatch, tmp_path, capsys):
+    """真要上传时必须装 twine（否则最后一步会失败）。"""
+    from uiu import cli_ops
+
+    calls: list[list[str]] = []
+
+    class _Proc:
+        returncode = 0
+
+    monkeypatch.setattr(cli_ops.subprocess, "run",
+                        lambda cmd, *a, **kw: (calls.append(list(cmd)), _Proc())[1])
+    monkeypatch.setattr(cli_ops, "_verify_version_consistency", lambda: (True, "0.2.0b1"))
+    monkeypatch.chdir(tmp_path)
+
+    class _Args:
+        dry_run = False
+        token = "pypi-fake"
+        test = True
+
+    cli_ops.cmd_publish(_Args())
+    joined = " ".join(" ".join(c) for c in calls if "install" in c)
+    assert "build" in joined and "twine" in joined, joined
+    capsys.readouterr()
+
+
+def test_publish_blocks_on_version_mismatch(monkeypatch, capsys):
+    """版本号不一致时必须就地拦下（发布纪律），不能继续构建。"""
+    from uiu import cli_ops
+
+    calls: list[list[str]] = []
+    monkeypatch.setattr(cli_ops.subprocess, "run",
+                        lambda cmd, *a, **kw: (calls.append(list(cmd)), None)[1])
+    monkeypatch.setattr(cli_ops, "_verify_version_consistency",
+                        lambda: (False, "pyproject 0.2.0b1 != npm 0.1.7"))
+
+    class _Args:
+        dry_run = True
+        token = ""
+        test = False
+
+    rc = cli_ops.cmd_publish(_Args())
+    assert rc == 2, "版本不一致应当以 rc=2 拦下"
+    assert not calls, "被拦下后不该再去装构建工具或构建"
+    assert "发布被拦下" in capsys.readouterr().err

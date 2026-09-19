@@ -41,14 +41,30 @@ def set_json_mode(enabled: bool) -> None:
     _JSON_MODE = bool(enabled)
 
 
+def _safe_print(text: str, stream) -> None:
+    """打印**永远不许**让命令崩掉。
+
+    中文 Windows 的控制台编码是 GBK：像 `✓`（U+2713）这种符号不在 GBK 码表里，
+    print() 会抛 UnicodeEncodeError。一个进度提示把 `uiu publish` 整条命令打挂，
+    是实测发生过的（发布命令 4 秒就死在第一个人读提示上）。
+    注意：pytest 捕获的是**文本**，所以单测看不出这个问题——必须有真控制台编码的用例。
+    """
+    try:
+        print(text, file=stream, flush=True)
+    except UnicodeEncodeError:
+        enc = getattr(stream, "encoding", None) or "utf-8"
+        safe = text.encode(enc, errors="replace").decode(enc, errors="replace")
+        print(safe, file=stream, flush=True)
+
+
 def progress(message: str) -> None:
     """人读进度。JSON 模式下写 stderr，保证 stdout 干净。"""
     stream = sys.stderr if _JSON_MODE else sys.stdout
-    print(message, file=stream, flush=True)
+    _safe_print(message, stream)
 
 
 def fail(message: str) -> None:
-    print(f"[error] {message}", file=sys.stderr, flush=True)
+    _safe_print(f"[error] {message}", sys.stderr)
 
 
 def _envelope(command: str, ok: bool, data: Any = None, error: str = "") -> dict:
@@ -64,11 +80,12 @@ def result(command: str, *, ok: bool = True, data: Any = None, error: str = "",
            human: str = "") -> None:
     """按当前模式输出：JSON 信封 or 人读文本。"""
     if _JSON_MODE:
-        print(json.dumps(_envelope(command, ok, data, error), ensure_ascii=False))
+        _safe_print(json.dumps(_envelope(command, ok, data, error), ensure_ascii=False),
+                    sys.stdout)
         return
     if human:
         stream = sys.stdout if ok else sys.stderr
-        print(human, file=stream)
+        _safe_print(human, stream)
 
 
 @contextmanager
@@ -87,10 +104,12 @@ def step(name: str, *, show_ms: bool = True) -> Iterator[dict]:
         yield state
     except BaseException:
         elapsed = time.monotonic() - started
-        progress(f"  ✗ {name} 中断（{elapsed:.1f}s）")
+        progress(f"  [x] {name} 中断（{elapsed:.1f}s）")
         raise
     elapsed = time.monotonic() - started
-    mark = "✓" if state.get("ok", True) else "✗"
+    # 标记只用 ASCII：与 _print_ok/_print_err 的 [ok]/[x] 保持一致，
+    # 也避免在 GBK 控制台上踩编码坑（✓/✗ 不在 GBK 里）
+    mark = "[ok]" if state.get("ok", True) else "[x]"
     timing = f"（{elapsed:.1f}s）" if show_ms and elapsed >= 0.05 else ""
     detail = f" {state.get('detail')}" if state.get("detail") else ""
     progress(f"  {mark} {name}{timing}{detail}")

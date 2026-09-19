@@ -139,4 +139,40 @@ def test_step_marks_failure(capsys):
         with cli_io.step("会失败的一步"):
             raise RuntimeError("boom")
     out = capsys.readouterr().out
-    assert "会失败的一步" in out and "✗" in out
+    assert "会失败的一步" in out and "[x]" in out
+
+
+def test_progress_never_crashes_on_a_legacy_console_encoding():
+    """中文 Windows 控制台是 GBK：像 ✓/✗ 这种符号不在码表里。
+
+    真发生过：`uiu publish` 在 GBK 控制台上 4 秒就死于 UnicodeEncodeError。
+    单测用 capsys 看不出——它捕获的是**文本**，真实控制台编码的是**字节**。
+    所以这里必须起子进程、指定 PYTHONIOENCODING、并且让输出里带不可编码的符号。
+    """
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    snippet = (
+        "from uiu.cli_io import step, progress, result\n"
+        "with step('first') as s:\n"
+        "    s['detail'] = 'ok'\n"
+        "try:\n"
+        "    with step('boom'):\n"
+        "        raise RuntimeError('x')\n"
+        "except RuntimeError:\n"
+        "    pass\n"
+        "progress('symbols: \u2713 \u2717 \u26a0')\n"      # 故意塞不在 GBK 里的符号
+        "result('demo', data={'k': 'v'}, human='human \u2713')\n"
+        "print('done')\n"
+    )
+    src = str(Path(__file__).resolve().parent.parent / "src")
+    for enc in ("gbk", "cp437"):
+        env = {**os.environ, "PYTHONIOENCODING": enc, "PYTHONPATH": src}
+        proc = subprocess.run([sys.executable, "-c", snippet],
+                              capture_output=True, env=env, timeout=180)
+        detail = proc.stderr.decode(enc, "replace")[-400:]
+        assert proc.returncode == 0, f"{enc} 下崩了：\n{detail}"
+        assert b"UnicodeEncodeError" not in proc.stderr, detail
+        assert b"done" in proc.stdout

@@ -19,6 +19,15 @@
 - **网关默认鉴权**：默认只绑 `127.0.0.1`；无 `UIU_GATEWAY_TOKEN` 时拒绝非本机监听（需显式
   `UIU_GATEWAY_INSECURE=1` 才放行并告警）；新增 `uiu serve --host`；通用 webhook 的 secret 改为必填；
   `uiu doctor` 新增可自动修复的 `channel/gateway-no-token`。
+- **修复 GBK 控制台下 `uiu publish` / `uiu update` 直接崩溃**：进度提示里用了 `✓`/`✗`，
+  而中文 Windows 控制台是 GBK，这两个符号不在码表里 → `UnicodeEncodeError` →
+  发布命令 4 秒就死（实测）。现在标记改为 ASCII 的 `[ok]`/`[x]`（与 CLI 其他输出一致），
+  并且所有进度/结果输出走编码安全的 `_safe_print`：**任何控制台编码都不该让命令挂掉**。
+  新增回归测试：起子进程、指定 `PYTHONIOENCODING=gbk/cp437`、输出里故意带不可编码符号
+  （pytest 的 capsys 捕获的是文本，看不出这类问题）。
+- **`uiu publish --dry-run` 不再安装 twine**：twine 的依赖树很重（本机冷装 15 分钟以上），
+  而 dry-run 只到「本地构建 + 检查 wheel」为止。现在 dry-run 实测 **21 秒**跑完
+  （版本一致性 → 构建 sdist+wheel → 检查 126 个文件与默认 workspace 是否打包）。
 - **npm 包内容修复（会让 npm 通道彻底不可用）**：`package.json` 的 `files` 白名单只有 `["bin/"]`，
   而 `bin/install.js` 要 `require("../lib/version")` → 用户 `npm install` 拿到 tarball 后
   **MODULE_NOT_FOUND，装不上**。已补 `lib/`，并新增 `tests/test_npm_package.py`（4 条）：

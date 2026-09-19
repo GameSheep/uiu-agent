@@ -65,7 +65,7 @@ git push origin --tags
 # 4.1 token：https://pypi.org/manage/account/token/ （首次）
 $env:PYPI_TOKEN = "pypi-..."
 
-# 4.2 先干跑：本地构建 + 检查 wheel 内容（不传任何东西）
+# 4.2 先干跑：本地构建 + 检查 wheel 内容（不传任何东西；实测 21 秒）
 .venv\Scripts\uiu.exe publish --dry-run
 
 # 4.3 正式发布（内部会做版本一致性校验 + build + twine upload）

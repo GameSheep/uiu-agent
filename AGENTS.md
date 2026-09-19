@@ -62,6 +62,11 @@ See @README.md for project overview and @package.json for available npm/pnpm com
 - 测试里调用 `uiu.main.main()` 时，**不要让该 workspace 的 `.env` 含真实密钥名**
   （`main()` 会把 `.env` 载入 `os.environ`，会污染同进程后续测试 —— doctor 的 no-api-key
   检查曾因此误判）。用 `SMOKE_TOKEN=...` 这类中性名字。
+- **用户可见输出要按「字节」想，不是按「文本」想**：中文 Windows 控制台是 GBK，
+  `✓`/`✗`/`⚠` 这类符号不在码表里，`print()` 会抛 `UnicodeEncodeError` 把整条命令打挂
+  （`uiu publish` 曾 4 秒就死）。CLI 输出统一走 `cli_io` 的 `_safe_print`，标记只用 ASCII
+  （`[ok]`/`[x]`）。**这类问题用 `capsys` 测不出来**（它捕的是文本），
+  必须起子进程 + `PYTHONIOENCODING=gbk` 才看得见。
 - **不要在跑全量测试的同时改源码**：pytest 边收集边导入，改到一半的文件会被读到，
   产生假失败（我就这么污染过一次覆盖率统计）。先跑完、再改、再跑。
 - 从 git 历史重新生成文件（如按域拆分）时要留意：**未提交的改动会丢**。本轮把 `commands.py`

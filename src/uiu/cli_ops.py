@@ -142,13 +142,16 @@ def cmd_publish(args) -> int:
     # 1. build（慢步骤给进度与耗时，脚本模式下进度走 stderr）
     from .cli_io import step
 
-    with step("安装构建工具 build/twine"):
+    # dry-run 只到「本地构建 + 检查 wheel」为止，**不需要 twine** —— 它的依赖树很重
+    # （本机实测冷装 15 分钟以上），会让「发布前先验一遍」这件事没人愿意做。
+    tools_needed = ["build"] if dry_run else ["build", "twine"]
+    with step("安装构建工具 " + "/".join(tools_needed)):
         rc = subprocess.run(
-            [sys.executable, "-m", "pip", "install", "--quiet", "build", "twine"],
+            [sys.executable, "-m", "pip", "install", "--quiet", *tools_needed],
             check=False,
         )
         if rc.returncode != 0:
-            _print_err("安装构建依赖 build/twine 失败")
+            _print_err("安装构建依赖 " + "/".join(tools_needed) + " 失败")
             return 1
     with step("构建 sdist + wheel"):
         rc = subprocess.run([sys.executable, "-m", "build", "--sdist", "--wheel"], check=False)

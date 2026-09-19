@@ -506,6 +506,12 @@ def _normalize_workspace_flag(argv: list[str]) -> list[str]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # 第一件事：让控制台编码不会把命令打挂（GBK 控制台 + ⭐/✓ 这类符号）
+    try:
+        from .cli_io import configure_stdio
+        configure_stdio()
+    except Exception:
+        pass
     parser = _build_parser()
     # split argv: subcommands vs TUI default
     raw = list(argv) if argv is not None else list(sys.argv[1:])

@@ -25,6 +25,21 @@ __all__ = ["json_mode", "set_json_mode", "progress", "fail", "result", "step", "
 _JSON_MODE = False
 
 
+def configure_stdio() -> None:
+    """把标准输出的**编码错误策略**改成 replace —— 一处兜底，全命令不再因编码崩。
+
+    中文 Windows 控制台是 GBK，而文案里有 ⭐ / ✓ / ⚙ 这类不在 GBK 码表里的符号，
+    print() 会抛 UnicodeEncodeError 把整条命令打挂（实测 uiu publish 与 uiu skills search 都死过）。
+    改成 replace 后：中文照常显示，个别符号降级成 "?"，但命令一定跑得完。
+    这比"逐个把符号换成 ASCII"牢靠——以后谁写新文案都不会再踩。
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(errors="replace")     # type: ignore[union-attr]
+        except Exception:                            # 非 TextIOWrapper（被重定向/被测试捕获）
+            pass
+
+
 def is_tty() -> bool:
     try:
         return bool(sys.stdout.isatty())

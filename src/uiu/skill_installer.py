@@ -184,7 +184,9 @@ def search_skills(query: str, limit: int = 10) -> str:
     lines = []
     for it in items[:limit]:
         desc = (it.get("description") or "")[:80]
-        lines.append(f"  {it['full_name']:<40} ⭐{it.get('stargazers_count', 0)}  {desc}")
+        # 用 ASCII 的 * 而不是 ⭐：GBK 控制台里 ⭐ 会变成 "?"（configure_stdio 已保证不崩，
+        # 但能正常显示就别让它降级）
+        lines.append(f"  {it['full_name']:<40} *{it.get('stargazers_count', 0)}  {desc}")
     lines.append("")
     lines.append("安装: uiu skills install <owner/repo>")
     return "\n".join(lines)

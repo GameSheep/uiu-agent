@@ -19,6 +19,12 @@
 - **网关默认鉴权**：默认只绑 `127.0.0.1`；无 `UIU_GATEWAY_TOKEN` 时拒绝非本机监听（需显式
   `UIU_GATEWAY_INSECURE=1` 才放行并告警）；新增 `uiu serve --host`；通用 webhook 的 secret 改为必填；
   `uiu doctor` 新增可自动修复的 `channel/gateway-no-token`。
+- **CLI 编码兜底（一处修，全命令受益）**：全命令扫荡又发现 `uiu skills search` 崩在 `⭐` 上。
+  现在入口调用 `cli_io.configure_stdio()`，把 stdout/stderr 的编码错误策略统一改成 `replace`——
+  中文照常显示、个别符号降级成 `?`，但**任何控制台编码都不会再让命令挂掉**；
+  同时把 `⭐` 换成 ASCII 的 `*`（能正常显示就别让它降级）。
+  新增 `tests/test_cli_encoding.py`（19 条）：起真子进程 + `PYTHONIOENCODING=gbk`，
+  把 17 条命令逐个跑一遍并断言没有 `UnicodeEncodeError`。
 - **修复 GBK 控制台下 `uiu publish` / `uiu update` 直接崩溃**：进度提示里用了 `✓`/`✗`，
   而中文 Windows 控制台是 GBK，这两个符号不在码表里 → `UnicodeEncodeError` →
   发布命令 4 秒就死（实测）。现在标记改为 ASCII 的 `[ok]`/`[x]`（与 CLI 其他输出一致），

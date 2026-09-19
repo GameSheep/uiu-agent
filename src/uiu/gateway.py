@@ -236,15 +236,48 @@ class Gateway:
     def _origin_channel(self) -> dict[str, str]:
         return self._origin
 
-    def run(self, port: int = 8765, host: str = "") -> None:
-        """Start all enabled channel adapters + webhook server, block forever."""
+    def _audit(self, event: str, **fields) -> None:
+        """把网关侧的安全事件写进审计日志（失败绝不影响请求处理）。
+
+        以前 401 拒绝只进结构化日志，不进审计：面对网络的组件，
+        「谁在什么时候试图驱动我的机器、被拦下了几次」正是审计该回答的问题。
+        """
+        try:
+            from .audit import record
+            record(self.ws.root, event, **fields)
+        except Exception:
+            pass
+
+    def _auth_ok(self, headers, path: str, remote: str) -> bool:
+        """校验网关 token；拒绝时留痕，返回是否放行。"""
+        if not self._gateway_token:
+            return True
+        got = headers.get("X-Gateway-Token", "")
+        if got == self._gateway_token:
+            return True
+        self._audit("gateway_auth_denied", path=str(path)[:200],
+                    remote=str(remote or "?"), reason="bad or missing X-Gateway-Token")
+        self.log.warning("gateway auth denied: path=%s remote=%s", path, remote)
+        return False
+
+    def run(self, port: int = 8765, host: str = "") -> str | None:
+        """Start all enabled channel adapters + webhook server, block forever.
+
+        Returns None when it actually served (i.e. ran until stopped);
+        otherwise returns **为什么没起来**，让调用方给非 0 退出码——
+        「什么都没做成却报成功」会让脚本/守护进程以为服务在跑（审计 P0-5 同类问题）。
+        """
         setup_logging(self.ws.root)
         self.log.info("gateway starting (channels=%d, port=%s, host=%s)",
                       len([c for c in self.cfg.channels if c.enabled]), port, host or "(default)")
+        # 先判「能不能安全绑定」：不安全就立刻拒绝，**优先于**「没 channel」这类配置提示。
+        # 安全相关的错必须先报出来，也不能因为别的配置缺失就被掩盖。
+        resolve_bind(host, self._gateway_token)
+
         enabled = [c for c in self.cfg.channels if c.enabled]
         if not enabled:
-            print("没有 enabled 的 channel。先: uiu channel add <name> --type <telegram|feishu|wecom>")
-            return
+            return ("没有 enabled 的 channel，网关没有启动。先加一个: "
+                    "uiu channel add <name> --type <telegram|feishu|wecom|webhook>")
 
         # 启动时连接配置的 MCP 服务器（best-effort，失败不影响 serve）
         try:
@@ -262,11 +295,13 @@ class Gateway:
         if feishu_wecom:
             http_server = self._start_http_server(port, host)
 
+        created = 0
         for c in enabled:
             adapter = channels.create_adapter(c, on_message=None)
             if adapter is None:
-                print(f"[gateway] 无法创建 adapter: {c.name} ({c.type})")
+                print(f"[gateway] 无法创建 adapter: {c.name} ({c.type})", file=sys.stderr)
                 continue
+            created += 1
             # wire on_message: record origin chat->channel, then run agent
             orig_on_message = self.on_message
 
@@ -292,6 +327,10 @@ class Gateway:
             except Exception as e:
                 print(f"[gateway]  !! {c.name} check 异常: {e}")
             adapter.start()
+
+        if not created and http_server is None:
+            return ("所有 enabled channel 都没能创建 adapter，网关没有启动："
+                    + ", ".join(f"{c.name}({c.type})" for c in enabled))
 
         # cron tick 线程：每 60s 跑到期任务
         cron_stop = threading.Event()
@@ -353,7 +392,8 @@ class Gateway:
                     self._json({"errcode": 0, "errmsg": "ok", "echostr": echo})
                     return
                 if self.path.startswith("/api/channels"):
-                    if gate._gateway_token and self.headers.get("X-Gateway-Token", "") != gate._gateway_token:
+                    addr = (getattr(self, "client_address", None) or ("?",))[0]
+                    if not gate._auth_ok(self.headers, self.path, addr):
                         self._json({"code": 1, "msg": "unauthorized"}, status=401)
                         return
                     self._json({"channels": [
@@ -377,8 +417,9 @@ class Gateway:
                 # 网关 token 只卡 /api/* 与 /generic/*；各平台回调走自有校验
                 #（飞书 verify_token、企微/WhatsApp 签名），避免公网回调被误杀
                 if self.path.startswith(("/api/", "/generic")) and gate._gateway_token:
-                    got = self.headers.get("X-Gateway-Token", "")
-                    if got != gate._gateway_token:
+                    if not gate._auth_ok(self.headers, self.path,
+                                         getattr(self, "client_address", ())[0]
+                                         if getattr(self, "client_address", None) else "?"):
                         self._json({"code": 1, "msg": "unauthorized"}, status=401)
                         return
                 try:

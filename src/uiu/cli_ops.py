@@ -236,7 +236,11 @@ def cmd_serve(args) -> int:
     from .workspace import load_workspace
     ws_obj = load_workspace(ws)
     gw = Gateway(cfg, ws_obj)
-    gw.run(port=args.port, host=getattr(args, "host", "") or "")
+    reason = gw.run(port=args.port, host=getattr(args, "host", "") or "")
+    if reason:
+        # 网关没能起来时必须非 0：否则脚本/守护进程会以为服务在跑
+        _print_err(reason)
+        return 2
     return 0
 
 

@@ -19,6 +19,12 @@
 - **网关默认鉴权**：默认只绑 `127.0.0.1`；无 `UIU_GATEWAY_TOKEN` 时拒绝非本机监听（需显式
   `UIU_GATEWAY_INSECURE=1` 才放行并告警）；新增 `uiu serve --host`；通用 webhook 的 secret 改为必填；
   `uiu doctor` 新增可自动修复的 `channel/gateway-no-token`。
+- **网关启动契约与鉴权留痕**：`uiu serve` 在「没有 enabled channel」时曾**返回 0**
+  （脚本/守护进程会以为服务在跑）——现在 `Gateway.run()` 返回「为什么没起来」，
+  `cmd_serve` 映射成非 0 退出码；并且**先校验绑定安全性再检查 channel**，
+  不安全监听（无 token 的对外绑定）永远优先报出来。
+  另外 401 拒绝以前只进结构化日志、**不进审计**：现在写入 `gateway_auth_denied`
+  （含路径与来源地址）。新增 5 条测试，其中 3 条**真起 HTTP server** 发真请求验证。
 - **CLI 编码兜底（一处修，全命令受益）**：全命令扫荡又发现 `uiu skills search` 崩在 `⭐` 上。
   现在入口调用 `cli_io.configure_stdio()`，把 stdout/stderr 的编码错误策略统一改成 `replace`——
   中文照常显示、个别符号降级成 `?`，但**任何控制台编码都不会再让命令挂掉**；
